@@ -1,0 +1,1240 @@
+const generateId = () => Math.random().toString(36).substr(2, 9);
+const colors = ['bg-blue-500', 'bg-purple-500', 'bg-indigo-500', 'bg-teal-500', 'bg-rose-500'];
+
+// Clean initial state with NO subjects
+const defaultData = { subjects: [], xp: 0 };
+let data = JSON.parse(localStorage.getItem('prepProData_v12')) || JSON.parse(JSON.stringify(defaultData));
+
+let isEditMode = true; // Start in creator mode so user can add first subject
+let currentView = 'dashboard';
+let viewHistory = [];
+let activeSubtopicId = null; 
+let activeSetId = null; 
+let activeAnalyticsSubjectId = null; 
+let studyContext = { type: null, step: 0, score: 0, answers: {} };
+
+window.app = {
+    tempImageUrl: '',
+    
+    init() {
+        this.updateUI();
+        this.setView('dashboard');
+    },
+
+    save() {
+        localStorage.setItem('prepProData_v12', JSON.stringify(data));
+        this.updateXPHeader();
+        
+        // Real-time Cloud Sync
+        if (window.syncToCloud) {
+            window.syncToCloud(data);
+        }
+    },
+
+    resetAllData() {
+        if(confirm("Are you sure? This deletes ALL subjects, topics, and quiz history.")) {
+            data = JSON.parse(JSON.stringify(defaultData));
+            isEditMode = true;
+            activeAnalyticsSubjectId = null;
+            this.save();
+            this.setView('dashboard');
+            this.showToast("All data wiped cleanly.", "success");
+        }
+    },
+
+    toggleMode() {
+        isEditMode = !isEditMode;
+        this.updateUI();
+        this.setView(currentView); 
+        this.showToast(isEditMode ? "Entered Creator Mode" : "Entered Learner Mode", "info");
+    },
+
+    updateUI() {
+        const modeBtn = document.getElementById('mode-toggle-btn');
+        const modeBadge = document.getElementById('mode-badge');
+        
+        if (isEditMode) {
+            modeBtn.innerHTML = `<i class="ph-bold ph-graduation-cap"></i> Switch to Learner`;
+            modeBtn.className = "w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-all shadow-md active:scale-95";
+            modeBadge.textContent = "Creator";
+            modeBadge.className = "px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700";
+        } else {
+            modeBtn.innerHTML = `<i class="ph-bold ph-pencil-simple"></i> Switch to Creator`;
+            modeBtn.className = "w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white font-medium rounded-xl hover:bg-slate-700 transition-all shadow-md active:scale-95";
+            modeBadge.textContent = "Learner";
+            modeBadge.className = "px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-600";
+        }
+        this.updateXPHeader();
+    },
+
+    updateXPHeader() {
+        document.getElementById('header-xp').textContent = `${data.xp} XP`;
+    },
+
+    toggleSidebar(force) {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobile-overlay');
+        const isOpen = force !== undefined ? force : sidebar.classList.contains('-translate-x-full');
+        if (isOpen) {
+            sidebar.classList.remove('-translate-x-full');
+            overlay.classList.remove('hidden');
+        } else {
+            sidebar.classList.add('-translate-x-full');
+            overlay.classList.add('hidden');
+        }
+    },
+
+    showToast(msg, type = "info") {
+        const toast = document.getElementById('toast');
+        document.getElementById('toast-message').textContent = msg;
+        const icon = document.getElementById('toast-icon');
+        if (type === 'success') icon.innerHTML = `<i class="ph-fill ph-check-circle text-green-400 text-xl"></i>`;
+        else if (type === 'error') icon.innerHTML = `<i class="ph-fill ph-warning-circle text-red-400 text-xl"></i>`;
+        else icon.innerHTML = `<i class="ph-fill ph-info text-blue-400 text-xl"></i>`;
+
+        toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+        setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none'), 3000);
+    },
+
+    setView(view, preserveHistory = false) {
+        if (!preserveHistory && view !== currentView) {
+            if (currentView === 'dashboard' || currentView === 'analytics') viewHistory = [];
+            else viewHistory.push(currentView);
+        }
+        currentView = view;
+        
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            btn.classList.remove('bg-blue-50', 'text-blue-700');
+            btn.classList.add('text-slate-600');
+        });
+        if (['dashboard', 'analytics'].includes(view)) {
+            document.getElementById(`nav-${view}`).classList.remove('text-slate-600');
+            document.getElementById(`nav-${view}`).classList.add('bg-blue-50', 'text-blue-700');
+            document.getElementById('back-btn-container').classList.add('hidden');
+            document.getElementById('header-title').textContent = view === 'dashboard' ? "Learning Path" : "Analytics";
+        } else {
+            document.getElementById('back-btn-container').classList.remove('hidden');
+        }
+
+        const container = document.getElementById('view-container');
+        container.innerHTML = ''; 
+        
+        if (view === 'dashboard') this.renderDashboard(container);
+        else if (view === 'analytics') this.renderAnalytics(container);
+        else if (view === 'subtopic-editor') this.renderSubtopicEditor(container);
+        else if (view === 'set-editor') this.renderSetEditor(container);
+        else if (view === 'fc-viewer') this.renderFlashcardViewer(container);
+        else if (view === 'quiz-player') this.renderQuizPlayer(container);
+        
+        this.toggleSidebar(false);
+    },
+
+    goBack() {
+        if (viewHistory.length > 0) {
+            const prev = viewHistory.pop();
+            this.setView(prev, true);
+        } else {
+            this.setView('dashboard');
+        }
+    },
+
+    showModal(title, contentHTML) {
+        const container = document.getElementById('modal-container');
+        const content = document.getElementById('modal-content');
+        content.innerHTML = `
+            <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <h3 class="font-bold text-lg text-slate-800">${title}</h3>
+                <button onclick="app.closeModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-200"><i class="ph-bold ph-x"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto">${contentHTML}</div>
+        `;
+        container.classList.remove('hidden');
+    },
+    closeModal() { document.getElementById('modal-container').classList.add('hidden'); },
+
+    promptInput(title, label, callback, initialValue = "") {
+        const html = `
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-slate-600 mb-1">${label}</label>
+                    <input type="text" id="prompt-input" value="${initialValue}" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-slate-700 font-medium">
+                </div>
+                <button onclick="
+                    const val = document.getElementById('prompt-input').value.trim();
+                    if(val) { app.closeModal(); ${callback} }
+                " class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md active:scale-95">Save</button>
+            </div>
+        `;
+        this.showModal(title, html);
+        setTimeout(() => document.getElementById('prompt-input').focus(), 100);
+    },
+
+    // Hierarchy Finders
+    findSubtopic(id) {
+        for (let s of data.subjects) {
+            for (let t of s.topics) {
+                const st = t.subtopics.find(x => x.id === id);
+                if (st) return { subtopic: st, topic: t, subject: s };
+            }
+        }
+        return null;
+    },
+    findSet(subtopicId, setId) {
+        const stData = this.findSubtopic(subtopicId);
+        if(stData) {
+            const set = stData.subtopic.questionSets.find(x => x.id === setId);
+            if(set) return set;
+        }
+        return null;
+    },
+    findSetByIdAnywhere(setId) {
+        for (let s of data.subjects) {
+            for (let t of s.topics) {
+                for (let st of t.subtopics) {
+                    const set = st.questionSets.find(x => x.id === setId);
+                    if (set) return set;
+                }
+            }
+        }
+        return null;
+    },
+    findTopicById(topicId) {
+        for (let s of data.subjects) {
+            const t = s.topics.find(x => x.id === topicId);
+            if (t) return t;
+        }
+        return null;
+    },
+
+    // Hierarchy Additions
+    addSubject() { this.promptInput("New Subject", "Subject Name", "app._saveSubject(val)"); },
+    _saveSubject(name) {
+        data.subjects.push({ id: generateId(), name, color: colors[data.subjects.length % colors.length], topics: [] });
+        this.save(); this.setView('dashboard');
+    },
+
+    addTopic(subjectId) { this.promptInput("New Topic", "Topic Name", `app._saveTopic('${subjectId}', val)`); },
+    _saveTopic(subjectId, name) {
+        const subj = data.subjects.find(s => s.id === subjectId);
+        if(subj) { subj.topics.push({ id: generateId(), name, subtopics: [] }); this.save(); this.setView('dashboard'); }
+    },
+
+    addSubtopic(subjectId, topicId) { this.promptInput("New Subtopic", "Subtopic Name", `app._saveSubtopic('${subjectId}', '${topicId}', val)`); },
+    _saveSubtopic(subjectId, topicId, name) {
+        const subj = data.subjects.find(s => s.id === subjectId);
+        const topic = subj?.topics.find(t => t.id === topicId);
+        if(topic) {
+            topic.subtopics.push({ id: generateId(), name, isCompleted: false, flashcards: [], questionSets: [], flashcardRevisions: 0 });
+            this.save(); this.setView('dashboard');
+        }
+    },
+
+    // Hierarchy Edits
+    editSubject(id) {
+        const s = data.subjects.find(x => x.id === id);
+        if(s) this.promptInput("Edit Subject", "Subject Name", `app._updateSubject('${id}', val)`, s.name);
+    },
+    _updateSubject(id, val) {
+        const s = data.subjects.find(x => x.id === id);
+        if(s) { s.name = val; this.save(); this.setView('dashboard'); }
+    },
+
+    editTopic(sId, tId) {
+        const s = data.subjects.find(x => x.id === sId);
+        const t = s?.topics.find(x => x.id === tId);
+        if(t) this.promptInput("Edit Topic", "Topic Name", `app._updateTopic('${sId}', '${tId}', val)`, t.name);
+    },
+    _updateTopic(sId, tId, val) {
+        const s = data.subjects.find(x => x.id === sId);
+        const t = s?.topics.find(x => x.id === tId);
+        if(t) { t.name = val; this.save(); this.setView('dashboard'); }
+    },
+
+    editSubtopicName(sId, tId, stId) {
+        const s = data.subjects.find(x => x.id === sId);
+        const t = s?.topics.find(x => x.id === tId);
+        const st = t?.subtopics.find(x => x.id === stId);
+        if(st) this.promptInput("Edit Subtopic", "Subtopic Name", `app._updateSubtopic('${sId}', '${tId}', '${stId}', val)`, st.name);
+    },
+    _updateSubtopic(sId, tId, stId, val) {
+        const s = data.subjects.find(x => x.id === sId);
+        const t = s?.topics.find(x => x.id === tId);
+        const st = t?.subtopics.find(x => x.id === stId);
+        if(st) { st.name = val; this.save(); this.setView('dashboard'); }
+    },
+
+    // Hierarchy Deletions
+    deleteSubject(id) {
+        if(confirm("Delete this subject and all topics inside it?")) {
+            data.subjects = data.subjects.filter(x => x.id !== id);
+            this.save(); this.setView('dashboard');
+        }
+    },
+    deleteTopic(sId, tId) {
+        if(confirm("Delete this topic and all subtopics inside it?")) {
+            const s = data.subjects.find(x => x.id === sId);
+            if(s) {
+                s.topics = s.topics.filter(x => x.id !== tId);
+                this.save(); this.setView('dashboard');
+            }
+        }
+    },
+    deleteSubtopic(sId, tId, stId) {
+        if(confirm("Delete this subtopic?")) {
+            const s = data.subjects.find(x => x.id === sId);
+            const t = s?.topics.find(x => x.id === tId);
+            if(t) {
+                t.subtopics = t.subtopics.filter(x => x.id !== stId);
+                this.save(); this.setView('dashboard');
+            }
+        }
+    },
+
+    toggleSubtopicComplete(subjectId, topicId, subtopicId) {
+        const subj = data.subjects.find(s => s.id === subjectId);
+        const topic = subj?.topics.find(t => t.id === topicId);
+        const st = topic?.subtopics.find(x => x.id === subtopicId);
+        if(st) {
+            st.isCompleted = !st.isCompleted;
+            this.save();
+            this.renderDashboard(document.getElementById('view-container'));
+        }
+    },
+
+    handleSubtopicClick(id) {
+        activeSubtopicId = id;
+        const stData = this.findSubtopic(id);
+        if(!stData) return;
+        const st = stData.subtopic;
+
+        if (isEditMode) {
+            document.getElementById('header-title').textContent = "Subtopic Editor";
+            this.setView('subtopic-editor');
+        } else {
+            document.getElementById('action-sheet-title').textContent = st.name;
+            const contentDiv = document.getElementById('action-sheet-content');
+            const fcDone = st.flashcardRevisions > 0;
+            
+            let html = `
+                <button onclick="app.startStudy('flashcards')" class="w-full flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-300 hover:shadow-md transition-all group mb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center relative">
+                            <i class="ph-bold ph-cards text-xl"></i>
+                            ${fcDone ? `<i class="ph-fill ph-check-circle text-green-500 absolute -top-1 -right-1 text-sm bg-white rounded-full shadow-sm"></i>` : ''}
+                        </div>
+                        <div class="text-left"><p class="font-bold text-slate-700">Master Flashcards</p><p class="text-xs text-slate-400">${st.flashcards.length} cards</p></div>
+                    </div>
+                    <i class="ph-bold ph-caret-right text-slate-300 group-hover:text-blue-500"></i>
+                </button>
+                <h4 class="text-xs font-bold text-slate-400 uppercase mb-2 ml-1">Question Sets</h4>
+            `;
+
+            if (st.questionSets.length === 0) {
+                html += `<p class="text-sm text-slate-500 text-center py-4 bg-white rounded-xl border border-slate-100">No question sets available.</p>`;
+            } else {
+                st.questionSets.forEach(set => {
+                    const setDone = set.history && set.history.length > 0;
+                    html += `
+                        <button onclick="app.startStudy('quiz', '${set.id}')" class="w-full flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-green-300 hover:shadow-md transition-all group mb-2">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-green-100 text-green-600 flex items-center justify-center relative">
+                                    <i class="ph-bold ph-target text-xl"></i>
+                                    ${setDone ? `<i class="ph-fill ph-check-circle text-green-500 absolute -top-1 -right-1 text-sm bg-white rounded-full shadow-sm"></i>` : ''}
+                                </div>
+                                <div class="text-left"><p class="font-bold text-slate-700">${set.name}</p><p class="text-xs text-slate-400">${set.questions.length} questions</p></div>
+                            </div>
+                            <i class="ph-bold ph-caret-right text-slate-300 group-hover:text-green-500"></i>
+                        </button>
+                    `;
+                });
+            }
+            contentDiv.innerHTML = html;
+            document.getElementById('action-sheet').classList.remove('hidden');
+        }
+    },
+
+    // --- Automated Cloud Image Upload (ImgBB API) ---
+    async handleImageUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        if (file.size > 10 * 1024 * 1024) {
+            alert("Image too large! Maximum file size is 10MB.");
+            event.target.value = '';
+            return;
+        }
+
+        const preview = document.getElementById('img-preview');
+        if (preview) preview.innerHTML = `<p class="text-sm text-blue-500 font-bold mt-2 animate-pulse"><i class="ph-bold ph-spinner animate-spin inline-block mr-2"></i>Uploading image...</p>`;
+
+        const IMGBB_API_KEY = "40b859e541d2f8912f8701563274f12e";
+        
+        const formData = new FormData();
+        formData.append("image", file);
+
+        try {
+            const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+                method: 'POST',
+                body: formData
+            });
+            const resData = await response.json();
+
+            if (resData.success) {
+                app.tempImageUrl = resData.data.url;
+                if (preview) preview.innerHTML = `<img src="${app.tempImageUrl}" class="max-h-24 rounded-lg shadow-sm border border-slate-200 mt-2">`;
+            } else {
+                throw new Error(resData.error?.message || "Upload rejected.");
+            }
+        } catch (err) {
+            console.error(err);
+            app.showToast("Upload failed: " + err.message, "error");
+            if (preview) preview.innerHTML = `<p class="text-sm text-red-500 font-bold mt-2">Upload failed.</p>`;
+        }
+    },
+
+    // --- Dashboard ---
+    renderDashboard(container) {
+        let html = `<div class="max-w-4xl mx-auto space-y-12">`;
+
+        if (data.subjects.length === 0) {
+            html += `
+                <div class="text-center p-12 bg-white rounded-3xl border-2 border-dashed border-slate-200 shadow-sm max-w-md mx-auto">
+                    <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <i class="ph-bold ph-folder-plus text-3xl"></i>
+                    </div>
+                    <h3 class="text-xl font-extrabold text-slate-800">Your path is empty</h3>
+                    <p class="text-slate-500 text-sm mt-1 mb-6">Create your first subject to get started.</p>
+                    ${isEditMode ? `<button onclick="app.addSubject()" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 active:scale-95 transition-all">+ Add First Subject</button>` : `<p class="text-slate-400 font-bold">Switch to Creator Mode to add content.</p>`}
+                </div>
+            `;
+        }
+
+        data.subjects.forEach(subject => {
+            let subjTotal = 0, subjCompleted = 0;
+            subject.topics.forEach(t => {
+                subjTotal += t.subtopics.length;
+                subjCompleted += t.subtopics.filter(st => st.isCompleted).length;
+            });
+            let subjProgress = subjTotal === 0 ? 0 : Math.round((subjCompleted/subjTotal)*100);
+
+            html += `
+                <div class="relative">
+                    <div class="mb-8 p-6 sm:p-8 rounded-2xl text-white ${subject.color} shadow-lg flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                        <div class="flex-1 w-full">
+                            <div class="flex items-center gap-3 mb-1">
+                                <h3 class="text-2xl font-bold">${subject.name}</h3>
+                                ${isEditMode ? `
+                                    <button onclick="app.editSubject('${subject.id}')" class="p-1.5 hover:bg-white/20 rounded transition-colors text-white/80 hover:text-white" title="Rename"><i class="ph-bold ph-pencil-simple"></i></button>
+                                    <button onclick="app.deleteSubject('${subject.id}')" class="p-1.5 hover:bg-red-500 rounded transition-colors text-white/80 hover:text-white" title="Delete"><i class="ph-bold ph-trash"></i></button>
+                                ` : ''}
+                            </div>
+                            <p class="text-white/80 text-sm font-medium">${subject.topics.length} Topics</p>
+                            ${!isEditMode && subjTotal > 0 ? `
+                                <div class="mt-4">
+                                    <div class="flex items-center justify-between text-xs font-bold text-white mb-1.5 w-full max-w-xs">
+                                        <span>Subject Progress</span>
+                                        <span>${subjProgress}%</span>
+                                    </div>
+                                    <div class="w-full max-w-xs h-1.5 bg-black/20 rounded-full overflow-hidden">
+                                        <div class="h-full bg-white rounded-full transition-all duration-500" style="width: ${subjProgress}%"></div>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        ${isEditMode ? `
+                            <button onclick="app.addTopic('${subject.id}')" class="px-4 py-2 bg-white/20 hover:bg-white/30 text-white font-bold rounded-xl backdrop-blur-sm transition-all text-sm flex items-center gap-2 shrink-0 border border-white/20">
+                                <i class="ph-bold ph-plus"></i> Add Topic
+                            </button>
+                        ` : ''}
+                    </div>
+                    
+                    <div class="relative pl-2 sm:pl-12 flex flex-col gap-10">
+                        <div class="skill-path-line hidden sm:block"></div>
+            `;
+
+            if(subject.topics.length === 0 && isEditMode) {
+                html += `<div class="text-slate-400 italic text-sm ml-12">No topics added yet.</div>`;
+            }
+
+            subject.topics.forEach(topic => {
+                let topTotal = topic.subtopics.length;
+                let topCompleted = topic.subtopics.filter(st => st.isCompleted).length;
+                let topProgress = topTotal === 0 ? 0 : Math.round((topCompleted/topTotal)*100);
+
+                html += `
+                    <div class="w-full z-10 relative">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between bg-white/80 backdrop-blur-md py-3 px-5 rounded-2xl border border-slate-200 shadow-sm sm:ml-16 mb-6 gap-3 group">
+                            <div class="flex items-center gap-3">
+                                <h4 class="text-lg font-bold text-slate-700">${topic.name}</h4>
+                                ${isEditMode ? `
+                                    <div class="flex gap-1">
+                                        <button onclick="app.editTopic('${subject.id}', '${topic.id}')" class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Rename"><i class="ph-bold ph-pencil-simple"></i></button>
+                                        <button onclick="app.deleteTopic('${subject.id}', '${topic.id}')" class="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded" title="Delete"><i class="ph-bold ph-trash"></i></button>
+                                    </div>
+                                ` : ''}
+                                ${!isEditMode && topTotal > 0 ? `
+                                    <div class="flex items-center gap-1.5 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 shadow-sm">
+                                        <i class="ph-bold ph-trend-up text-blue-500 text-xs"></i>
+                                        <span class="text-xs font-black text-blue-600">${topProgress}%</span>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            ${isEditMode ? `
+                                <button onclick="app.addSubtopic('${subject.id}', '${topic.id}')" class="px-3 py-1.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-500 font-bold rounded-lg transition-all text-xs flex items-center gap-1">
+                                    <i class="ph-bold ph-plus"></i> Add Subtopic
+                                </button>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="flex flex-wrap gap-4 sm:gap-6 ml-4 sm:ml-24">
+                `;
+
+                if(topic.subtopics.length === 0 && isEditMode) {
+                    html += `<div class="text-slate-400 italic text-xs">No subtopics created.</div>`;
+                }
+
+                topic.subtopics.forEach(st => {
+                    let isStComplete = !!st.isCompleted;
+                    const hasContent = st.flashcards.length > 0 || st.questionSets.some(s => s.questions.length > 0);
+                    
+                    let cardStyle = "bg-white border-slate-200 hover:border-blue-300";
+                    if (!isEditMode && isStComplete) {
+                        cardStyle = "bg-green-50 border-green-200 shadow-sm";
+                    } else if (!hasContent && !isEditMode) {
+                        cardStyle = "bg-slate-100 border-dashed border-slate-300 opacity-80";
+                    }
+
+                    let icon = hasContent ? '<i class="ph-fill ph-book-open text-blue-500 text-2xl"></i>' : '<i class="ph-fill ph-empty text-slate-300 text-2xl"></i>';
+                    if(!isEditMode && isStComplete) icon = '<i class="ph-fill ph-check-circle text-green-500 text-2xl"></i>';
+
+                    html += `
+                        <div class="relative flex flex-col w-[140px] group cursor-pointer" onclick="app.handleSubtopicClick('${st.id}')">
+                            <div class="relative z-10 flex flex-col p-4 rounded-2xl border-2 transition-all duration-200 ${cardStyle} shadow-sm active:scale-95 h-full">
+                                <div class="flex justify-between items-start mb-2">
+                                    ${icon}
+                                    ${isEditMode ? `
+                                        <div class="flex gap-1 relative z-20">
+                                            <button onclick="event.stopPropagation(); app.editSubtopicName('${subject.id}', '${topic.id}', '${st.id}')" class="p-1 text-slate-300 hover:text-blue-600 rounded" title="Rename"><i class="ph-fill ph-pencil-simple"></i></button>
+                                            <button onclick="event.stopPropagation(); app.deleteSubtopic('${subject.id}', '${topic.id}', '${st.id}')" class="p-1 text-slate-300 hover:text-red-500 rounded" title="Delete"><i class="ph-fill ph-trash"></i></button>
+                                        </div>
+                                    ` : `
+                                        <div class="ml-auto relative z-20" title="${isStComplete ? 'Mark Incomplete' : 'Mark Complete'}">
+                                            <input type="checkbox" ${isStComplete ? 'checked' : ''} onclick="event.stopPropagation(); app.toggleSubtopicComplete('${subject.id}', '${topic.id}', '${st.id}')" class="w-5 h-5 accent-green-500 cursor-pointer">
+                                        </div>
+                                    `}
+                                </div>
+                                <span class="text-sm font-bold leading-snug mt-auto flex items-start justify-between gap-1 w-full">
+                                    <span>${st.name}</span>
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += `</div></div>`;
+            });
+            html += `</div></div>`;
+        });
+
+        if (isEditMode && data.subjects.length > 0) {
+            html += `
+                <div class="mt-8 text-center">
+                    <button onclick="app.addSubject()" class="px-6 py-4 border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 text-slate-500 hover:text-blue-600 font-bold rounded-2xl transition-all flex items-center justify-center gap-2 w-full max-w-sm mx-auto">
+                        <i class="ph-bold ph-plus text-xl"></i> Add Another Subject
+                    </button>
+                </div>
+            `;
+        }
+        container.innerHTML = html + `</div>`;
+    },
+
+    // --- Subtopic Editor (Flashcards & Question Sets) ---
+    renderSubtopicEditor(container) {
+        const stData = this.findSubtopic(activeSubtopicId);
+        if (!stData) return;
+        const st = stData.subtopic;
+
+        let html = `
+            <div class="max-w-5xl mx-auto">
+                <div class="mb-8">
+                    <h1 class="text-3xl font-extrabold text-slate-800">${st.name}</h1>
+                    <p class="text-slate-500 font-medium mt-1">Manage Flashcards & Question Sets</p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <!-- Flashcards Section -->
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
+                        <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
+                            <h3 class="font-bold text-lg flex items-center gap-2 text-slate-700"><i class="ph-fill ph-cards text-blue-500 text-xl"></i> Flashcards (${st.flashcards.length})</h3>
+                            <button onclick="app.showFlashcardForm()" class="px-3 py-1.5 bg-white border border-slate-200 shadow-sm hover:border-blue-400 rounded-lg text-sm font-bold text-blue-600 transition-all">+ Add</button>
+                        </div>
+                        <div class="p-4 flex-1 overflow-y-auto space-y-3">
+        `;
+        if(st.flashcards.length === 0) html += `<div class="text-center py-8 text-slate-400 text-sm font-medium">No flashcards yet.</div>`;
+        st.flashcards.forEach((fc, idx) => {
+            html += `
+                <div class="p-4 rounded-xl border border-slate-100 bg-slate-50 relative group">
+                    <button onclick="app.deleteItem('fc', ${idx})" class="absolute top-2 right-2 text-red-400 hover:text-red-600 p-1 hidden group-hover:block bg-white rounded shadow-sm border border-slate-200"><i class="ph-bold ph-trash"></i></button>
+                    <p class="font-bold text-sm text-slate-700 mb-2 border-b border-slate-200 pb-2">Q: ${fc.front}</p>
+                    ${fc.img ? `<img src="${fc.img}" class="max-h-32 object-contain my-2 rounded border border-slate-200">` : ''}
+                    ${fc.back ? `<p class="text-sm text-slate-600 line-clamp-2">A: ${fc.back}</p>` : ''}
+                </div>
+            `;
+        });
+        html += `</div></div>`;
+
+        // Question Sets Section
+        html += `
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
+                        <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-green-50/50">
+                            <h3 class="font-bold text-lg flex items-center gap-2 text-slate-700"><i class="ph-fill ph-stack text-green-500 text-xl"></i> Question Sets (${st.questionSets.length})</h3>
+                            <button onclick="app.promptInput('New Question Set', 'Set Name', 'app._createSet(val)')" class="px-3 py-1.5 bg-white border border-slate-200 shadow-sm hover:border-green-400 rounded-lg text-sm font-bold text-green-600 transition-all">+ New Set</button>
+                        </div>
+                        <div class="p-4 flex-1 overflow-y-auto space-y-3">
+        `;
+        if(st.questionSets.length === 0) html += `<div class="text-center py-8 text-slate-400 text-sm font-medium">No sets created yet.</div>`;
+        st.questionSets.forEach((set, idx) => {
+            html += `
+                <div class="p-4 rounded-xl border border-slate-200 bg-white shadow-sm flex items-center justify-between group">
+                    <div>
+                        <h4 class="font-bold text-slate-700">${set.name}</h4>
+                        <p class="text-xs font-medium text-slate-400 mt-1">${set.questions.length} Questions</p>
+                    </div>
+                    <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onclick="app.editSet('${set.id}')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-bold transition-colors">Edit</button>
+                        <button onclick="app.deleteItem('set', ${idx})" class="p-1.5 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg transition-colors"><i class="ph-bold ph-trash"></i></button>
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div></div></div></div>`;
+        container.innerHTML = html;
+    },
+
+    _createSet(name) {
+        const stData = this.findSubtopic(activeSubtopicId);
+        stData.subtopic.questionSets.push({ id: generateId(), name, questions: [], history: [] });
+        this.save(); this.setView('subtopic-editor');
+    },
+    editSet(setId) {
+        activeSetId = setId;
+        document.getElementById('header-title').textContent = "Set Editor";
+        this.setView('set-editor');
+    },
+    deleteItem(type, idx) {
+        if(!confirm("Are you sure you want to delete this?")) return;
+        const stData = this.findSubtopic(activeSubtopicId);
+        
+        if (type === 'fc') stData.subtopic.flashcards.splice(idx, 1);
+        else if (type === 'set') stData.subtopic.questionSets.splice(idx, 1);
+        else if (type === 'q') {
+            const set = this.findSet(activeSubtopicId, activeSetId);
+            set.questions.splice(idx, 1);
+            this.save(); this.setView('set-editor'); return;
+        }
+        
+        this.save(); this.setView('subtopic-editor');
+    },
+
+    renderSetEditor(container) {
+        const set = this.findSet(activeSubtopicId, activeSetId);
+        if(!set) return;
+
+        let html = `
+            <div class="max-w-3xl mx-auto">
+                <div class="mb-8 flex items-center justify-between">
+                    <div>
+                        <h1 class="text-3xl font-extrabold text-slate-800">${set.name}</h1>
+                        <p class="text-slate-500 font-medium mt-1">Manage Questions</p>
+                    </div>
+                    <button onclick="app.showQuestionForm()" class="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white shadow-md rounded-xl font-bold transition-all flex items-center gap-2">
+                        <i class="ph-bold ph-plus"></i> Add Question
+                    </button>
+                </div>
+                <div class="space-y-4">
+        `;
+        
+        if(set.questions.length === 0) html += `<div class="text-center py-12 text-slate-400 font-medium bg-white rounded-2xl border border-slate-200 border-dashed">No questions in this set yet.</div>`;
+        
+        set.questions.forEach((q, idx) => {
+            let typeBadge = q.type === 'mcq' ? 'bg-blue-100 text-blue-700' : (q.type==='msq' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700');
+            html += `
+                <div class="p-5 rounded-2xl border border-slate-200 bg-white relative shadow-sm group">
+                    <button onclick="app.deleteItem('q', ${idx})" class="absolute top-4 right-4 text-slate-400 hover:text-red-500 p-1 bg-slate-50 rounded-lg hover:bg-red-50 transition-colors"><i class="ph-bold ph-trash text-lg"></i></button>
+                    <div class="flex items-center gap-2 mb-3 border-b border-slate-100 pb-3">
+                        <span class="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded ${typeBadge}">${q.type}</span>
+                    </div>
+                    ${q.img ? `<img src="${q.img}" class="max-h-24 object-contain mb-3 rounded-lg border border-slate-200">` : ''}
+                    <p class="font-bold text-slate-700 mb-3">${q.text}</p>
+                    <div class="text-sm text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        ${q.type === 'num' ? `<span class="font-bold">Answer:</span> ${q.correct}` : `<span class="font-bold">Options:</span> ${q.options.join(', ')}`}
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += `</div></div>`;
+        container.innerHTML = html;
+    },
+
+    // Modals for Flashcards & Questions
+    showFlashcardForm() {
+        app.tempImageUrl = '';
+        const html = `
+            <div class="space-y-4">
+                <div><label class="block text-sm font-bold text-slate-600 mb-1">Front (Question/Concept)</label>
+                <textarea id="fc-front" rows="2" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-slate-700"></textarea></div>
+                
+                <div><label class="block text-sm font-bold text-slate-600 mb-1">Back (Answer/Details) <span class="font-normal text-slate-400">- Optional if image provided</span></label>
+                <textarea id="fc-back" rows="3" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-slate-700"></textarea></div>
+                
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <label class="block text-sm font-bold text-slate-600 mb-2">Upload Image (Optional)</label>
+                    <input type="file" accept="image/*" onchange="app.handleImageUpload(event)" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 transition-all cursor-pointer">
+                    <div id="img-preview"></div>
+                </div>
+
+                <button onclick="app.saveFlashcard()" class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition shadow-md">Add Flashcard</button>
+            </div>
+        `;
+        this.showModal("New Flashcard", html);
+    },
+    saveFlashcard() {
+        const front = document.getElementById('fc-front').value.trim();
+        const back = document.getElementById('fc-back').value.trim();
+        if(!front) return alert("Front text is required.");
+        if(!back && !app.tempImageUrl) return alert("Please provide either Back text or an Image.");
+        
+        const stData = this.findSubtopic(activeSubtopicId);
+        stData.subtopic.flashcards.push({ id: generateId(), front, back, img: app.tempImageUrl });
+        app.tempImageUrl = '';
+        this.save(); this.closeModal(); this.setView('subtopic-editor');
+    },
+
+    showQuestionForm() {
+        app.tempImageUrl = '';
+        const html = `
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-bold text-slate-600 mb-1">Question Type</label>
+                    <select id="q-type" onchange="app.renderQuestionFields()" class="w-full px-4 py-3 rounded-xl border border-slate-300 outline-none bg-white font-medium">
+                        <option value="mcq">Multiple Choice (MCQ)</option>
+                        <option value="msq">Multiple Select (MSQ)</option>
+                        <option value="num">Numerical</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-slate-600 mb-1">Question Text</label>
+                    <textarea id="q-text" rows="2" class="w-full px-4 py-3 rounded-xl border border-slate-300 outline-none text-slate-700"></textarea>
+                </div>
+                
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <label class="block text-sm font-bold text-slate-600 mb-2">Upload Image (Optional)</label>
+                    <input type="file" accept="image/*" onchange="app.handleImageUpload(event)" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 transition-all cursor-pointer">
+                    <div id="img-preview"></div>
+                </div>
+
+                <div id="q-dynamic-fields" class="p-4 bg-slate-50 rounded-xl border border-slate-200"></div>
+                <button onclick="app.saveQuestion()" class="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition shadow-md">Add Question</button>
+            </div>
+        `;
+        this.showModal("New Question", html);
+        this.renderQuestionFields();
+    },
+    renderQuestionFields() {
+        const type = document.getElementById('q-type').value;
+        const container = document.getElementById('q-dynamic-fields');
+        if (type === 'num') {
+            container.innerHTML = `<label class="block text-sm font-bold text-slate-600 mb-1">Exact Answer</label><input type="number" step="any" id="q-num-ans" class="w-full px-4 py-3 rounded-xl border border-slate-300 outline-none font-mono">`;
+        } else {
+            let html = `<label class="block text-sm font-bold text-slate-600 mb-2">Options (Mark correct answer)</label><div class="space-y-2">`;
+            const inputType = type === 'mcq' ? 'radio' : 'checkbox';
+            for(let i=0; i<4; i++) {
+                html += `
+                    <div class="flex items-center gap-3 bg-white p-2 border border-slate-200 rounded-lg">
+                        <input type="${inputType}" name="q-correct-opt" id="q-correct-opt-${i}" value="${i}" class="w-5 h-5 cursor-pointer accent-blue-600">
+                        <input type="text" id="q-opt-${i}" placeholder="Option ${i+1}" class="flex-1 outline-none text-sm font-medium text-slate-700">
+                    </div>
+                `;
+            }
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+    },
+    saveQuestion() {
+        const type = document.getElementById('q-type').value;
+        const text = document.getElementById('q-text').value.trim();
+        if(!text) return alert("Question text is required.");
+
+        let qObj = { id: generateId(), type, text, img: app.tempImageUrl };
+        
+        if (type === 'num') {
+            const ans = document.getElementById('q-num-ans').value;
+            if(ans === '') return alert("Provide numerical answer.");
+            qObj.correct = parseFloat(ans);
+        } else {
+            let options = [], correct = [];
+            for(let i=0; i<4; i++) {
+                const optText = document.getElementById(`q-opt-${i}`).value.trim();
+                const isChecked = document.getElementById(`q-correct-opt-${i}`).checked;
+                
+                if(optText) {
+                    options.push(optText);
+                    if(isChecked) correct.push(options.length - 1); 
+                } else if (isChecked) {
+                    return alert(`You selected Option ${i+1} as correct, but left its text empty. Please type the option text.`);
+                }
+            }
+            if(options.length < 2) return alert("Please type text into at least 2 option boxes.");
+            if(correct.length === 0) return alert("Select at least one correct answer.");
+            
+            qObj.options = options;
+            qObj.correct = type === 'mcq' ? correct[0] : correct; 
+        }
+
+        const set = this.findSet(activeSubtopicId, activeSetId);
+        set.questions.push(qObj);
+        app.tempImageUrl = '';
+        this.save(); this.closeModal(); this.setView('set-editor');
+    },
+
+    // Study Engine
+    startStudy(type, setId = null) {
+        document.getElementById('action-sheet').classList.add('hidden');
+        const stData = this.findSubtopic(activeSubtopicId);
+        
+        if(type === 'flashcards' && stData.subtopic.flashcards.length === 0) return this.showToast("No flashcards.", "error");
+        if(type === 'quiz') {
+            const set = stData.subtopic.questionSets.find(x => x.id === setId);
+            if(!set || set.questions.length === 0) return this.showToast("No questions in this set.", "error");
+            activeSetId = setId;
+        }
+        
+        studyContext = { type, step: 0, score: 0, answers: {}, isFlipped: false, isChecked: false };
+        this.setView(type === 'flashcards' ? 'fc-viewer' : 'quiz-player');
+    },
+
+    renderFlashcardViewer(container) {
+        const stData = this.findSubtopic(activeSubtopicId);
+        const cards = stData.subtopic.flashcards;
+        if(studyContext.step >= cards.length) { this.finishSession(); return; }
+        const card = cards[studyContext.step];
+        const progress = (studyContext.step / cards.length) * 100;
+
+        container.innerHTML = `
+            <div class="max-w-2xl mx-auto h-full flex flex-col pt-4">
+                <div class="w-full h-2 bg-slate-200 rounded-full mb-8"><div class="h-full bg-blue-500 transition-all duration-300" style="width:${progress}%"></div></div>
+                <div class="flex-1 relative perspective-1000 cursor-pointer w-full" onclick="app.toggleFlip()">
+                    <div class="w-full h-full duration-500 transform-style-3d relative rounded-3xl shadow-xl ${studyContext.isFlipped ? 'rotate-y-180' : ''}">
+                        <div class="absolute inset-0 backface-hidden bg-white border-2 border-slate-100 rounded-3xl p-8 flex flex-col items-center justify-center text-center">
+                            <span class="text-xs font-bold text-blue-500 mb-6 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-wider">Tap to flip</span>
+                            <h3 class="text-3xl font-extrabold text-slate-800">${card.front}</h3>
+                        </div>
+                        <div class="absolute inset-0 backface-hidden rotate-y-180 bg-blue-50 border-2 border-blue-200 rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center text-center overflow-hidden">
+                            ${card.img ? `<div class="flex-1 w-full min-h-0 flex items-center justify-center mb-4"><img src="${card.img}" class="max-w-full max-h-full object-contain rounded-xl shadow-sm border border-white/50"></div>` : ''}
+                            ${card.back ? `<div class="shrink-0 overflow-y-auto max-h-1/3 w-full"><p class="text-xl font-bold text-blue-900 whitespace-pre-line leading-relaxed">${card.back}</p></div>` : ''}
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-8 mb-4">
+                    <button onclick="event.stopPropagation(); app.nextCard()" class="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-2xl shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 text-lg">Got It</button>
+                </div>
+            </div>
+        `;
+    },
+    toggleFlip() { studyContext.isFlipped = !studyContext.isFlipped; this.renderFlashcardViewer(document.getElementById('view-container')); },
+    nextCard() { studyContext.step++; studyContext.isFlipped = false; this.renderFlashcardViewer(document.getElementById('view-container')); },
+
+    renderQuizPlayer(container) {
+        const set = this.findSet(activeSubtopicId, activeSetId);
+        const questions = set.questions;
+        if(studyContext.step >= questions.length) { this.finishSession(); return; }
+        const q = questions[studyContext.step];
+        const progress = (studyContext.step / questions.length) * 100;
+        const isChecked = studyContext.isChecked;
+
+        let optionsHtml = '';
+        if (q.type === 'num') {
+            let style = isChecked ? (studyContext.answers[studyContext.step] == q.correct ? "border-green-500 bg-green-50 text-green-700" : "border-red-500 bg-red-50 text-red-700") : "border-slate-300 focus:border-blue-500";
+            let reveal = isChecked ? `<div class="mt-4 p-3 bg-slate-100 rounded-xl font-bold text-slate-600">Correct Answer: <span class="text-blue-600">${q.correct}</span></div>` : "";
+            optionsHtml = `<div class="mt-8"><input type="number" step="any" ${isChecked?'disabled':''} value="${studyContext.answers[studyContext.step]||''}" oninput="app.selectQuizAnswer(this.value)" class="w-full text-center text-3xl font-bold py-6 rounded-2xl border-2 ${style} outline-none">${reveal}</div>`;
+        } else {
+            optionsHtml = `<div class="mt-8 space-y-4">`;
+            const cur = studyContext.answers[studyContext.step] || (q.type === 'msq' ? [] : null);
+            q.options.forEach((opt, idx) => {
+                let btnStyle = "border-slate-200 bg-white hover:bg-slate-50", icon = "";
+                if (isChecked) {
+                    const isCorrectOpt = q.type === 'mcq' ? q.correct === idx : q.correct.includes(idx);
+                    const isSel = q.type === 'mcq' ? cur === idx : cur.includes(idx);
+                    if (isCorrectOpt) { btnStyle = "border-green-500 bg-green-50 text-green-800"; icon = `<i class="ph-bold ph-check-circle text-green-500 text-2xl"></i>`; } 
+                    else if (isSel) { btnStyle = "border-red-400 bg-red-50 text-red-700"; icon = `<i class="ph-bold ph-x-circle text-red-500 text-2xl"></i>`; } 
+                    else btnStyle = "border-slate-100 bg-slate-50 opacity-50";
+                } else {
+                    if ((q.type === 'mcq' && cur === idx) || (q.type === 'msq' && cur.includes(idx))) btnStyle = "border-blue-500 bg-blue-50 text-blue-700 border-2";
+                }
+                optionsHtml += `<button ${isChecked?'':`onclick="app.selectQuizAnswer(${idx})"`} class="w-full text-left p-5 rounded-2xl border-2 ${btnStyle} font-bold text-lg flex items-center justify-between transition-all"><span>${opt}</span>${icon}</button>`;
+            });
+            optionsHtml += `</div>`;
+            if(q.type==='msq') optionsHtml += `<p class="mt-4 text-center text-sm font-bold text-purple-600 bg-purple-100 py-1.5 rounded-lg border border-purple-200">Select all that apply</p>`;
+        }
+
+        let footerHtml = "";
+        if (isChecked) {
+            const isCorrect = this.evalQuizAnswer(q, studyContext.answers[studyContext.step]);
+            const feedback = isCorrect ? `<div class="text-green-700 font-extrabold text-xl">Awesome!</div>` : `<div class="text-red-700 font-extrabold text-xl">Not quite right.</div>`;
+            footerHtml = `<div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 z-40"><div class="max-w-2xl mx-auto flex items-center justify-between">${feedback}<button onclick="app.nextQuizQuestion()" class="px-8 py-4 bg-green-500 text-white font-extrabold rounded-2xl shadow-[0_4px_0_0_#16a34a] active:translate-y-1">Continue</button></div></div>`;
+        } else {
+            const hasAns = (q.type!=='msq'&&q.type!=='num'&&studyContext.answers[studyContext.step]!=null) || (q.type==='msq'&&studyContext.answers[studyContext.step]?.length>0) || (q.type==='num'&&studyContext.answers[studyContext.step]);
+            footerHtml = `<div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 z-40"><div class="max-w-2xl mx-auto flex justify-end"><button ${hasAns?'':'disabled'} onclick="app.checkQuizAnswer()" class="px-12 py-4 ${hasAns?'bg-blue-600 text-white shadow-[0_4px_0_0_#1e3a8a] hover:bg-blue-500':'bg-slate-200 text-slate-400 cursor-not-allowed'} font-extrabold rounded-2xl active:translate-y-1 transition-all">Check</button></div></div>`;
+        }
+
+        container.innerHTML = `
+            <div class="max-w-2xl mx-auto h-full flex flex-col pt-4 pb-32 animate-pop">
+                <div class="w-full flex items-center justify-between mb-6">
+                    <div class="flex-1 h-2 bg-slate-200 rounded-full mr-4"><div class="h-full bg-green-500 transition-all duration-300" style="width:${progress}%"></div></div>
+                    <span class="text-sm font-bold text-slate-400">Q ${studyContext.step+1}/${questions.length}</span>
+                </div>
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-800 leading-tight">${q.text}</h2>
+                ${q.img ? `<img src="${q.img}" class="max-h-48 object-contain my-5 rounded-xl shadow-sm border border-slate-200">` : ''}
+                ${optionsHtml}
+            </div>
+            ${footerHtml}
+        `;
+    },
+    selectQuizAnswer(val) {
+        const q = this.findSet(activeSubtopicId, activeSetId).questions[studyContext.step];
+        if (q.type === 'mcq' || q.type === 'num') studyContext.answers[studyContext.step] = val;
+        else {
+            let arr = studyContext.answers[studyContext.step] || [];
+            if (arr.includes(val)) arr = arr.filter(x => x !== val); else arr.push(val);
+            studyContext.answers[studyContext.step] = arr;
+        }
+        this.renderQuizPlayer(document.getElementById('view-container'));
+    },
+    evalQuizAnswer(q, ans) {
+        if(ans == null || ans === '') return false;
+        if(q.type === 'mcq') return ans === q.correct;
+        if(q.type === 'msq') return ans.length === q.correct.length && ans.every(v => q.correct.includes(v));
+        if(q.type === 'num') return parseFloat(ans) === parseFloat(q.correct);
+        return false;
+    },
+    checkQuizAnswer() {
+        studyContext.isChecked = true;
+        const q = this.findSet(activeSubtopicId, activeSetId).questions[studyContext.step];
+        if(this.evalQuizAnswer(q, studyContext.answers[studyContext.step])) studyContext.score++;
+        this.renderQuizPlayer(document.getElementById('view-container'));
+    },
+    nextQuizQuestion() { studyContext.isChecked = false; studyContext.step++; this.renderQuizPlayer(document.getElementById('view-container')); },
+    
+    finishSession() {
+        let xpGained = 10; 
+        const stData = this.findSubtopic(activeSubtopicId);
+        
+        if (studyContext.type === 'quiz') {
+            const set = stData.subtopic.questionSets.find(x => x.id === activeSetId);
+            const totalQ = set.questions.length;
+            const accuracy = totalQ ? Math.round((studyContext.score/totalQ)*100) : 0;
+            
+            if(!set.history) set.history = [];
+            set.history.push({
+                correct: studyContext.score,
+                total: totalQ,
+                acc: accuracy,
+                date: new Date().toLocaleDateString(),
+                timestamp: Date.now()
+            });
+            xpGained += studyContext.score * 15;
+        } else {
+            stData.subtopic.flashcardRevisions = (stData.subtopic.flashcardRevisions || 0) + 1;
+        }
+        
+        data.xp += xpGained;
+        this.save();
+
+        const container = document.getElementById('view-container');
+        container.innerHTML = `
+            <div class="max-w-md mx-auto text-center py-16 animate-pop">
+                <div class="relative w-40 h-40 mx-auto mb-8">
+                    <div class="absolute inset-0 bg-yellow-400 rounded-full blur-xl opacity-40 animate-pulse"></div>
+                    <div class="relative bg-gradient-to-tr from-yellow-400 to-orange-400 w-full h-full rounded-full flex items-center justify-center border-4 border-white shadow-xl">
+                        <i class="ph-fill ph-trophy text-white text-7xl"></i>
+                    </div>
+                </div>
+                <h2 class="text-4xl font-extrabold text-slate-800 mb-2">Great Job!</h2>
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm mb-8 mt-6 flex items-center justify-center gap-4">
+                    <i class="ph-fill ph-lightning text-yellow-500 text-4xl animate-bounce"></i>
+                    <div class="text-left">
+                        <p class="text-sm font-bold text-slate-400 uppercase">XP Earned</p>
+                        <p class="text-3xl font-black text-yellow-500">+${xpGained}</p>
+                    </div>
+                </div>
+                <button onclick="app.goBack()" class="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-2xl shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 text-xl">Continue</button>
+            </div>
+        `;
+    },
+
+    // Analytics & Historical Charts
+    getSubjectStats(subjectId) {
+        const subj = data.subjects.find(s => s.id === subjectId);
+        if (!subj) return null;
+
+        let sTotalQs = 0; let sRevs = 0;
+        const topStats = [];
+
+        subj.topics.forEach(topic => {
+            let tTotalQs = 0; let tRevs = 0;
+            const subStats = [];
+
+            topic.subtopics.forEach(subtopic => {
+                let stTotalQs = 0; 
+                let stRevs = subtopic.flashcardRevisions || 0;
+                const setStats = [];
+
+                subtopic.questionSets.forEach(set => {
+                    let setTotal = 0;
+                    if(set.history) {
+                        set.history.forEach(h => { setTotal += h.total; });
+                        stRevs += set.history.length;
+                    }
+                    stTotalQs += setTotal; 
+
+                    setStats.push({ 
+                        id: set.id,
+                        name: set.name,
+                        history: set.history || []
+                    });
+                });
+
+                tTotalQs += stTotalQs; tRevs += stRevs;
+                subStats.push({ 
+                    name: subtopic.name, 
+                    fcRevs: subtopic.flashcardRevisions || 0,
+                    total: stTotalQs, 
+                    setStats 
+                });
+            });
+
+            sTotalQs += tTotalQs; sRevs += tRevs;
+            topStats.push({ id: topic.id, name: topic.name, rev: tRevs, total: tTotalQs, subStats });
+        });
+
+        return {
+            name: subj.name, color: subj.color,
+            rev: sRevs, total: sTotalQs,
+            topStats
+        };
+    },
+    
+    setAnalyticsSubject(id) {
+        activeAnalyticsSubjectId = id;
+        this.renderAnalytics(document.getElementById('view-container'));
+    },
+
+    _buildChartHtml(title, subtitle, historyItems) {
+        if (historyItems.length === 0) {
+            this.showModal(`Performance Graph`, `<div class="text-center py-10 text-slate-500 font-medium border-2 border-dashed border-slate-200 rounded-2xl">No attempts recorded yet.</div>`);
+            return;
+        }
+
+        let bars = historyItems.map((h, i) => {
+            let color = h.acc < 60 ? 'bg-red-400' : (h.acc < 80 ? 'bg-yellow-400' : 'bg-green-400');
+            return `
+                <div class="flex flex-col items-center justify-end h-full group relative min-w-[32px] flex-1 max-w-[48px]">
+                    <div class="absolute bottom-full mb-2 bg-slate-800 text-white text-[10px] px-2 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none shadow-lg chart-tooltip text-center leading-tight">
+                        <span class="font-bold text-slate-300">Attempt ${i+1}</span><br>
+                        ${h.setName ? `<span class="text-xs text-blue-300">${h.setName}</span><br>` : ''}
+                        <span class="text-sm font-black">${h.acc}%</span><br>
+                        <span class="text-slate-400">${h.correct} / ${h.total} correct</span><br>
+                        <span class="text-slate-400">${h.date}</span>
+                    </div>
+                    <div class="w-full ${color} rounded-t-md transition-all shadow-sm relative overflow-hidden" style="height: ${Math.max(h.acc, 2)}%;">
+                        <div class="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    </div>
+                    <span class="text-[10px] font-bold text-slate-400 mt-2 truncate w-full text-center">#${i+1}</span>
+                </div>
+            `;
+        }).join('');
+
+        let html = `
+            <div class="px-2 pt-24">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h4 class="text-xl font-bold text-slate-800">${title}</h4>
+                        <p class="text-sm font-medium text-slate-500 mt-1">${subtitle}</p>
+                    </div>
+                </div>
+                
+                <div class="relative w-full h-[280px] flex">
+                    <div class="flex flex-col justify-between text-[10px] font-bold text-slate-400 pr-3 pb-6 border-r border-slate-200 text-right w-12 shrink-0">
+                        <span>100%</span>
+                        <span>75%</span>
+                        <span>50%</span>
+                        <span>25%</span>
+                        <span>0%</span>
+                    </div>
+                    
+                    <div class="flex-1 overflow-x-auto hide-scrollbar pb-2 relative">
+                        <div class="absolute inset-0 flex flex-col justify-between pb-6 pointer-events-none z-0">
+                            <div class="w-full border-b border-slate-100 border-dashed h-0"></div>
+                            <div class="w-full border-b border-slate-100 border-dashed h-0"></div>
+                            <div class="w-full border-b border-slate-100 border-dashed h-0"></div>
+                            <div class="w-full border-b border-slate-100 border-dashed h-0"></div>
+                            <div class="w-full border-b border-slate-200 h-0"></div>
+                        </div>
+                        
+                        <div class="flex items-end h-full pb-6 px-4 gap-2 z-10 relative min-w-max">
+                            ${bars}
+                        </div>
+                    </div>
+                </div>
+                <div class="text-center mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-t border-slate-100 pt-3">
+                    <i class="ph-bold ph-arrows-left-right text-sm align-middle mr-1"></i> Scroll horizontally if needed
+                </div>
+            </div>
+        `;
+        this.showModal(`Performance Graph`, html);
+    },
+
+    showHistoryChart(setId, setName) {
+        const set = this.findSetByIdAnywhere(setId);
+        if (!set) return;
+        this._buildChartHtml(setName, "Accuracy over time", set.history || []);
+    },
+
+    showTopicHistoryChart(topicId, topicName) {
+        const topic = this.findTopicById(topicId);
+        if (!topic) return;
+
+        let allAttempts = [];
+        topic.subtopics.forEach(st => {
+            st.questionSets.forEach(set => {
+                if(set.history) {
+                    set.history.forEach(h => {
+                        allAttempts.push({
+                            ...h,
+                            setName: set.name
+                        });
+                    });
+                }
+            });
+        });
+
+        allAttempts.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        this._buildChartHtml(topicName, "Overall topic timeline", allAttempts);
+    },
+
+    renderAnalytics(container) {
+        if (data.subjects.length === 0) {
+            container.innerHTML = `<div class="max-w-5xl mx-auto text-center py-12"><p class="text-slate-500 font-medium">No subjects available for analytics.</p></div>`;
+            return;
+        }
+
+        if (!activeAnalyticsSubjectId || !data.subjects.find(s => s.id === activeAnalyticsSubjectId)) {
+            activeAnalyticsSubjectId = data.subjects[0].id;
+        }
+
+        const stats = this.getSubjectStats(activeAnalyticsSubjectId);
+
+        let tabsHtml = `<div class="flex gap-3 overflow-x-auto pb-2 mb-8 hide-scrollbar">`;
+        data.subjects.forEach(s => {
+            const isActive = s.id === activeAnalyticsSubjectId;
+            tabsHtml += `<button onclick="app.setAnalyticsSubject('${s.id}')" class="px-5 py-2.5 rounded-xl font-bold whitespace-nowrap transition-all ${isActive ? s.color + ' text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200'}">${s.name}</button>`;
+        });
+        tabsHtml += `</div>`;
+
+        let html = `
+            <div class="max-w-5xl mx-auto space-y-6 animate-pop">
+                <div class="mb-2">
+                    <h2 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Subject Analytics</h2>
+                    <h1 class="text-3xl font-extrabold text-slate-800">Performance</h1>
+                </div>
+
+                ${tabsHtml}
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
+                        <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mb-2"><i class="ph-bold ph-arrows-clockwise text-2xl"></i></div>
+                        <p class="text-xs font-bold text-slate-400 uppercase">Subject Revisions</p>
+                        <p class="text-2xl font-black text-slate-700">${stats.rev}</p>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
+                        <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 mb-2"><i class="ph-bold ph-check-square-offset text-2xl"></i></div>
+                        <p class="text-xs font-bold text-slate-400 uppercase">Qs Solved Here</p>
+                        <p class="text-2xl font-black text-slate-700">${stats.total}</p>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
+                        <div class="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600 mb-2"><i class="ph-fill ph-lightning text-2xl"></i></div>
+                        <p class="text-xs font-bold text-slate-400 uppercase">Total App XP</p>
+                        <p class="text-2xl font-black text-yellow-600">${data.xp}</p>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-6">
+                    <div class="${stats.color} p-4 text-white flex justify-between items-center">
+                        <h4 class="font-extrabold text-lg">${stats.name} Topics</h4>
+                    </div>
+                    <div class="p-0 sm:p-2">
+        `;
+
+        if (stats.topStats.length === 0) html += `<p class="text-slate-400 text-center py-8">No topics yet.</p>`;
+
+        stats.topStats.forEach(topic => {
+            html += `
+                <div class="m-2 sm:m-4 rounded-xl border border-slate-200 shadow-sm bg-slate-50/50 overflow-hidden">
+                    <div class="bg-slate-100 px-4 py-3 flex justify-between items-center border-b border-slate-200">
+                        <h5 class="font-bold text-slate-700"><i class="ph-bold ph-folder text-slate-400 mr-2"></i>${topic.name}</h5>
+                        <button onclick="app.showTopicHistoryChart('${topic.id}', '${topic.name.replace(/'/g, "\\'")}')" class="px-3 py-1.5 bg-white text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm">
+                            <i class="ph-bold ph-chart-bar text-sm"></i> Topic History
+                        </button>
+                    </div>
+                    <div class="divide-y divide-slate-200 flex flex-col">
+            `;
+            
+            if(topic.subStats.length === 0) html += `<p class="text-slate-400 text-center py-4 text-sm">No subtopics available.</p>`;
+
+            topic.subStats.forEach(subtopic => {
+                html += `<div class="p-4 bg-white hover:bg-slate-50 transition-colors">`;
+                html += `
+                    <div class="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
+                        <div class="flex items-center gap-2">
+                            <i class="ph-fill ph-file-text text-blue-500"></i>
+                            <span class="font-bold text-slate-700">${subtopic.name}</span>
+                        </div>
+                        <div class="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">FC Revisions: ${subtopic.fcRevs}x</div>
+                    </div>
+                `;
+                
+                if (subtopic.setStats.length === 0) {
+                    html += `<p class="text-slate-400 text-xs italic pl-6">No question sets attached.</p>`;
+                } else {
+                    subtopic.setStats.forEach(set => {
+                        let historyHtml = "";
+                        if (!set.history || set.history.length === 0) {
+                            historyHtml = `<span class="text-slate-400 text-xs font-medium bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">No Attempts</span>`;
+                        } else {
+                            historyHtml = `
+                                <button onclick="app.showHistoryChart('${set.id}', '${set.name.replace(/'/g, "\\'")}')" class="px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm">
+                                    <i class="ph-bold ph-chart-bar text-sm"></i> View History
+                                </button>
+                            `;
+                        }
+
+                        html += `
+                            <div class="pl-6 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-l-2 border-slate-100 ml-2 mb-2">
+                                <div class="flex items-center gap-2">
+                                    <i class="ph-bold ph-stack text-slate-400"></i>
+                                    <span class="font-semibold text-slate-600 text-sm">${set.name}</span>
+                                </div>
+                                <div>${historyHtml}</div>
+                            </div>
+                        `;
+                    });
+                }
+                html += `</div>`;
+            });
+            html += `</div></div>`;
+        });
+        html += `</div></div></div>`;
+        container.innerHTML = html;
+    }
+};

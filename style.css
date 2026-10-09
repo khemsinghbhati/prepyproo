@@ -1,0 +1,43 @@
+body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+
+/* 3D Flip Card Styles */
+.perspective-1000 { perspective: 1000px; }
+.transform-style-3d { transform-style: preserve-3d; }
+.backface-hidden { backface-visibility: hidden; }
+.rotate-y-180 { transform: rotateY(180deg); }
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.skill-path-line {
+    position: absolute; left: 50%; top: 40px; bottom: -40px; width: 4px;
+    background-color: #e2e8f0; transform: translateX(-50%); z-index: 0;
+}
+@media (min-width: 640px) {
+    .skill-path-line { left: 40px; transform: none; width: 6px; }
+}
+
+/* Animations */
+@keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+.animate-pop { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    50% { transform: translateX(5px); }
+    75% { transform: translateX(-5px); }
+}
+.animate-shake { animation: shake 0.4s ease-in-out; }
+
+.modal-backdrop { backdrop-filter: blur(4px); }
+
+.chart-tooltip::after {
+    content: ''; position: absolute; top: 100%; left: 50%; margin-left: -4px;
+    border-width: 4px; border-style: solid; border-color: #1e293b transparent transparent transparent;
+}
