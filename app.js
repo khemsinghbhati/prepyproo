@@ -1,17 +1,16 @@
 const generateId = () => Math.random().toString(36).substr(2, 9);
-const colors = ['bg-blue-500', 'bg-purple-500', 'bg-indigo-500', 'bg-teal-500', 'bg-rose-500'];
+const colors = ['bg-blue-600', 'bg-purple-600', 'bg-emerald-600', 'bg-rose-600', 'bg-amber-600'];
 
-// Clean initial state with NO subjects
 const defaultData = { subjects: [], xp: 0 };
 let data = JSON.parse(localStorage.getItem('prepProData_v12')) || JSON.parse(JSON.stringify(defaultData));
 
-let isEditMode = true; // Start in creator mode so user can add first subject
+let isEditMode = true; 
 let currentView = 'dashboard';
 let viewHistory = [];
 let activeSubtopicId = null; 
 let activeSetId = null; 
 let activeAnalyticsSubjectId = null; 
-let studyContext = { type: null, step: 0, score: 0, answers: {} };
+let studyContext = { type: null, step: 0, score: 0, answers: {}, isFlipped: false, isChecked: false, timeSpent: [], qStart: 0 };
 
 window.app = {
     tempImageUrl: '',
@@ -24,21 +23,17 @@ window.app = {
     save() {
         localStorage.setItem('prepProData_v12', JSON.stringify(data));
         this.updateXPHeader();
-        
-        // Real-time Cloud Sync
-        if (window.syncToCloud) {
-            window.syncToCloud(data);
-        }
+        if (window.syncToCloud) window.syncToCloud(data);
     },
 
     resetAllData() {
-        if(confirm("Are you sure? This deletes ALL subjects, topics, and quiz history.")) {
+        if(confirm("Are you sure? This deletes ALL data permanently.")) {
             data = JSON.parse(JSON.stringify(defaultData));
             isEditMode = true;
             activeAnalyticsSubjectId = null;
             this.save();
             this.setView('dashboard');
-            this.showToast("All data wiped cleanly.", "success");
+            this.showToast("Data wiped completely.", "success");
         }
     },
 
@@ -46,7 +41,7 @@ window.app = {
         isEditMode = !isEditMode;
         this.updateUI();
         this.setView(currentView); 
-        this.showToast(isEditMode ? "Entered Creator Mode" : "Entered Learner Mode", "info");
+        this.showToast(isEditMode ? "Creator Mode Active" : "Learner Mode Active", "info");
     },
 
     updateUI() {
@@ -54,15 +49,15 @@ window.app = {
         const modeBadge = document.getElementById('mode-badge');
         
         if (isEditMode) {
-            modeBtn.innerHTML = `<i class="ph-bold ph-graduation-cap"></i> Switch to Learner`;
-            modeBtn.className = "w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-all shadow-md active:scale-95";
+            modeBtn.innerHTML = `<i class="ph-bold ph-graduation-cap text-lg"></i> Switch to Learner`;
+            modeBtn.className = "w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-blue-600/20 text-blue-400 font-extrabold rounded-xl hover:bg-blue-600/30 transition-all shadow-md active:scale-95 border border-blue-500/30 tracking-wide";
             modeBadge.textContent = "Creator";
-            modeBadge.className = "px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700";
+            modeBadge.className = "px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest bg-blue-500/20 text-blue-400 border border-blue-500/30";
         } else {
-            modeBtn.innerHTML = `<i class="ph-bold ph-pencil-simple"></i> Switch to Creator`;
-            modeBtn.className = "w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 text-white font-medium rounded-xl hover:bg-slate-700 transition-all shadow-md active:scale-95";
+            modeBtn.innerHTML = `<i class="ph-bold ph-pencil-simple text-lg"></i> Switch to Creator`;
+            modeBtn.className = "w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-slate-800 text-slate-300 font-extrabold rounded-xl hover:bg-slate-700 transition-all shadow-md active:scale-95 border border-slate-700 tracking-wide";
             modeBadge.textContent = "Learner";
-            modeBadge.className = "px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-600";
+            modeBadge.className = "px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest bg-slate-800 text-slate-400 border border-slate-700";
         }
         this.updateXPHeader();
     },
@@ -88,9 +83,9 @@ window.app = {
         const toast = document.getElementById('toast');
         document.getElementById('toast-message').textContent = msg;
         const icon = document.getElementById('toast-icon');
-        if (type === 'success') icon.innerHTML = `<i class="ph-fill ph-check-circle text-green-400 text-xl"></i>`;
-        else if (type === 'error') icon.innerHTML = `<i class="ph-fill ph-warning-circle text-red-400 text-xl"></i>`;
-        else icon.innerHTML = `<i class="ph-fill ph-info text-blue-400 text-xl"></i>`;
+        if (type === 'success') icon.innerHTML = `<i class="ph-fill ph-check-circle text-emerald-400 text-2xl"></i>`;
+        else if (type === 'error') icon.innerHTML = `<i class="ph-fill ph-warning-circle text-red-400 text-2xl"></i>`;
+        else icon.innerHTML = `<i class="ph-fill ph-info text-blue-400 text-2xl"></i>`;
 
         toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
         setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none'), 3000);
@@ -104,12 +99,13 @@ window.app = {
         currentView = view;
         
         document.querySelectorAll('.nav-btn').forEach(btn => {
-            btn.classList.remove('bg-blue-50', 'text-blue-700');
-            btn.classList.add('text-slate-600');
+            btn.classList.remove('bg-blue-500/10', 'text-blue-400', 'border-blue-500/20', 'shadow-inner');
+            btn.classList.add('text-slate-500', 'border-transparent');
         });
         if (['dashboard', 'analytics'].includes(view)) {
-            document.getElementById(`nav-${view}`).classList.remove('text-slate-600');
-            document.getElementById(`nav-${view}`).classList.add('bg-blue-50', 'text-blue-700');
+            const activeBtn = document.getElementById(`nav-${view}`);
+            activeBtn.classList.remove('text-slate-500', 'border-transparent');
+            activeBtn.classList.add('bg-blue-500/10', 'text-blue-400', 'border-blue-500/20', 'shadow-inner');
             document.getElementById('back-btn-container').classList.add('hidden');
             document.getElementById('header-title').textContent = view === 'dashboard' ? "Learning Path" : "Analytics";
         } else {
@@ -142,27 +138,34 @@ window.app = {
         const container = document.getElementById('modal-container');
         const content = document.getElementById('modal-content');
         content.innerHTML = `
-            <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                <h3 class="font-bold text-lg text-slate-800">${title}</h3>
-                <button onclick="app.closeModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-200"><i class="ph-bold ph-x"></i></button>
+            <div class="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-900 rounded-t-[2rem]">
+                <h3 class="font-black text-xl text-white tracking-wide">${title}</h3>
+                <button onclick="app.closeModal()" class="text-slate-500 hover:text-white p-2 rounded-xl hover:bg-slate-800 transition-colors"><i class="ph-bold ph-x text-xl"></i></button>
             </div>
-            <div class="p-6 overflow-y-auto">${contentHTML}</div>
+            <div class="p-6 sm:p-8 overflow-y-auto bg-slate-900 rounded-b-[2rem]">${contentHTML}</div>
         `;
-        container.classList.remove('hidden');
+        container.classList.remove('hidden', 'opacity-0');
+        content.classList.remove('scale-95');
     },
-    closeModal() { document.getElementById('modal-container').classList.add('hidden'); },
+    closeModal() { 
+        const container = document.getElementById('modal-container');
+        const content = document.getElementById('modal-content');
+        container.classList.add('opacity-0');
+        content.classList.add('scale-95');
+        setTimeout(() => container.classList.add('hidden'), 300);
+    },
 
     promptInput(title, label, callback, initialValue = "") {
         const html = `
-            <div class="space-y-4">
+            <div class="space-y-6">
                 <div>
-                    <label class="block text-sm font-semibold text-slate-600 mb-1">${label}</label>
-                    <input type="text" id="prompt-input" value="${initialValue}" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-slate-700 font-medium">
+                    <label class="block text-xs font-black text-slate-500 mb-3 uppercase tracking-widest">${label}</label>
+                    <input type="text" id="prompt-input" value="${initialValue}" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all font-bold text-lg shadow-inner">
                 </div>
                 <button onclick="
                     const val = document.getElementById('prompt-input').value.trim();
                     if(val) { app.closeModal(); ${callback} }
-                " class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md active:scale-95">Save</button>
+                " class="w-full py-4 bg-blue-600 text-white font-black rounded-xl hover:bg-blue-500 transition-all shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 tracking-widest uppercase text-sm">Save</button>
             </div>
         `;
         this.showModal(title, html);
@@ -206,7 +209,7 @@ window.app = {
         return null;
     },
 
-    // Hierarchy Additions
+    // Additions & Edits
     addSubject() { this.promptInput("New Subject", "Subject Name", "app._saveSubject(val)"); },
     _saveSubject(name) {
         data.subjects.push({ id: generateId(), name, color: colors[data.subjects.length % colors.length], topics: [] });
@@ -229,7 +232,6 @@ window.app = {
         }
     },
 
-    // Hierarchy Edits
     editSubject(id) {
         const s = data.subjects.find(x => x.id === id);
         if(s) this.promptInput("Edit Subject", "Subject Name", `app._updateSubject('${id}', val)`, s.name);
@@ -263,7 +265,6 @@ window.app = {
         if(st) { st.name = val; this.save(); this.setView('dashboard'); }
     },
 
-    // Hierarchy Deletions
     deleteSubject(id) {
         if(confirm("Delete this subject and all topics inside it?")) {
             data.subjects = data.subjects.filter(x => x.id !== id);
@@ -316,34 +317,34 @@ window.app = {
             const fcDone = st.flashcardRevisions > 0;
             
             let html = `
-                <button onclick="app.startStudy('flashcards')" class="w-full flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-300 hover:shadow-md transition-all group mb-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center relative">
-                            <i class="ph-bold ph-cards text-xl"></i>
-                            ${fcDone ? `<i class="ph-fill ph-check-circle text-green-500 absolute -top-1 -right-1 text-sm bg-white rounded-full shadow-sm"></i>` : ''}
+                <button onclick="app.startStudy('flashcards')" class="w-full flex items-center justify-between p-5 bg-slate-800 border border-slate-700 rounded-2xl hover:border-blue-500/50 hover:shadow-lg transition-all group mb-6">
+                    <div class="flex items-center gap-4">
+                        <div class="w-14 h-14 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center relative border border-blue-500/20">
+                            <i class="ph-bold ph-cards text-3xl"></i>
+                            ${fcDone ? `<i class="ph-fill ph-check-circle text-emerald-400 absolute -top-2 -right-2 text-xl bg-slate-800 rounded-full"></i>` : ''}
                         </div>
-                        <div class="text-left"><p class="font-bold text-slate-700">Master Flashcards</p><p class="text-xs text-slate-400">${st.flashcards.length} cards</p></div>
+                        <div class="text-left"><p class="font-black text-white text-lg tracking-wide">Master Flashcards</p><p class="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">${st.flashcards.length} cards</p></div>
                     </div>
-                    <i class="ph-bold ph-caret-right text-slate-300 group-hover:text-blue-500"></i>
+                    <i class="ph-bold ph-caret-right text-slate-500 group-hover:text-blue-400 text-xl"></i>
                 </button>
-                <h4 class="text-xs font-bold text-slate-400 uppercase mb-2 ml-1">Question Sets</h4>
+                <h4 class="text-[10px] font-black text-slate-500 uppercase mb-3 ml-1 tracking-widest">Question Sets</h4>
             `;
 
             if (st.questionSets.length === 0) {
-                html += `<p class="text-sm text-slate-500 text-center py-4 bg-white rounded-xl border border-slate-100">No question sets available.</p>`;
+                html += `<p class="text-xs text-slate-500 font-bold uppercase tracking-widest text-center py-6 bg-slate-800/50 rounded-xl border border-slate-800 border-dashed">No sets available.</p>`;
             } else {
                 st.questionSets.forEach(set => {
                     const setDone = set.history && set.history.length > 0;
                     html += `
-                        <button onclick="app.startStudy('quiz', '${set.id}')" class="w-full flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-green-300 hover:shadow-md transition-all group mb-2">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-lg bg-green-100 text-green-600 flex items-center justify-center relative">
+                        <button onclick="app.startStudy('quiz', '${set.id}')" class="w-full flex items-center justify-between p-4 bg-slate-800 border border-slate-700 rounded-xl hover:border-emerald-500/50 hover:bg-slate-800 transition-all group mb-3 shadow-sm">
+                            <div class="flex items-center gap-4">
+                                <div class="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center relative border border-emerald-500/20">
                                     <i class="ph-bold ph-target text-xl"></i>
-                                    ${setDone ? `<i class="ph-fill ph-check-circle text-green-500 absolute -top-1 -right-1 text-sm bg-white rounded-full shadow-sm"></i>` : ''}
+                                    ${setDone ? `<i class="ph-fill ph-check-circle text-emerald-400 absolute -top-1.5 -right-1.5 text-base bg-slate-800 rounded-full"></i>` : ''}
                                 </div>
-                                <div class="text-left"><p class="font-bold text-slate-700">${set.name}</p><p class="text-xs text-slate-400">${set.questions.length} questions</p></div>
+                                <div class="text-left"><p class="font-bold text-slate-200 text-base">${set.name}</p><p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">${set.questions.length} questions</p></div>
                             </div>
-                            <i class="ph-bold ph-caret-right text-slate-300 group-hover:text-green-500"></i>
+                            <i class="ph-bold ph-caret-right text-slate-600 group-hover:text-emerald-400"></i>
                         </button>
                     `;
                 });
@@ -353,7 +354,6 @@ window.app = {
         }
     },
 
-    // --- Automated Cloud Image Upload (ImgBB API) ---
     async handleImageUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -365,10 +365,9 @@ window.app = {
         }
 
         const preview = document.getElementById('img-preview');
-        if (preview) preview.innerHTML = `<p class="text-sm text-blue-500 font-bold mt-2 animate-pulse"><i class="ph-bold ph-spinner animate-spin inline-block mr-2"></i>Uploading image...</p>`;
+        if (preview) preview.innerHTML = `<p class="text-sm text-blue-400 font-bold mt-4 animate-pulse flex items-center"><i class="ph-bold ph-spinner animate-spin text-xl mr-2"></i>Uploading securely...</p>`;
 
         const IMGBB_API_KEY = "40b859e541d2f8912f8701563274f12e";
-        
         const formData = new FormData();
         formData.append("image", file);
 
@@ -381,30 +380,40 @@ window.app = {
 
             if (resData.success) {
                 app.tempImageUrl = resData.data.url;
-                if (preview) preview.innerHTML = `<img src="${app.tempImageUrl}" class="max-h-24 rounded-lg shadow-sm border border-slate-200 mt-2">`;
+                if (preview) preview.innerHTML = `<img src="${app.tempImageUrl}" class="max-h-40 object-contain rounded-xl shadow-lg border border-slate-700 mt-4 bg-slate-950 p-2">`;
             } else {
                 throw new Error(resData.error?.message || "Upload rejected.");
             }
         } catch (err) {
             console.error(err);
             app.showToast("Upload failed: " + err.message, "error");
-            if (preview) preview.innerHTML = `<p class="text-sm text-red-500 font-bold mt-2">Upload failed.</p>`;
+            if (preview) preview.innerHTML = `<p class="text-sm text-red-400 font-bold mt-3 border border-red-500/30 bg-red-500/10 p-2 rounded-lg">Upload failed.</p>`;
         }
     },
 
-    // --- Dashboard ---
+    handleImageUrl(url) {
+        app.tempImageUrl = url.trim();
+        const preview = document.getElementById('img-preview');
+        if (app.tempImageUrl) {
+            preview.innerHTML = `<img src="${app.tempImageUrl}" class="max-h-40 object-contain rounded-xl shadow-lg border border-slate-700 mt-4 bg-slate-950 p-2" onerror="this.onerror=null; this.parentElement.innerHTML='<p class=\\'text-xs text-red-400 mt-3 font-bold border border-red-500/30 bg-red-500/10 p-2 rounded-lg\\'>Invalid image URL or broken link.</p>'; app.tempImageUrl='';">`;
+        } else {
+            preview.innerHTML = '';
+        }
+    },
+
+    // --- Dashboard PRO UI ---
     renderDashboard(container) {
-        let html = `<div class="max-w-4xl mx-auto space-y-12">`;
+        let html = `<div class="max-w-5xl mx-auto space-y-12">`;
 
         if (data.subjects.length === 0) {
             html += `
-                <div class="text-center p-12 bg-white rounded-3xl border-2 border-dashed border-slate-200 shadow-sm max-w-md mx-auto">
-                    <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <i class="ph-bold ph-folder-plus text-3xl"></i>
+                <div class="text-center p-12 bg-slate-900 rounded-3xl border-2 border-dashed border-slate-700 shadow-sm max-w-md mx-auto">
+                    <div class="w-20 h-20 bg-blue-500/10 text-blue-400 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-blue-500/20 shadow-inner">
+                        <i class="ph-bold ph-folder-plus text-4xl"></i>
                     </div>
-                    <h3 class="text-xl font-extrabold text-slate-800">Your path is empty</h3>
-                    <p class="text-slate-500 text-sm mt-1 mb-6">Create your first subject to get started.</p>
-                    ${isEditMode ? `<button onclick="app.addSubject()" class="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 active:scale-95 transition-all">+ Add First Subject</button>` : `<p class="text-slate-400 font-bold">Switch to Creator Mode to add content.</p>`}
+                    <h3 class="text-2xl font-black text-white tracking-tight">Your path is empty</h3>
+                    <p class="text-slate-400 text-sm mt-2 mb-8 font-medium">Create your first subject to start building.</p>
+                    ${isEditMode ? `<button onclick="app.addSubject()" class="px-8 py-4 bg-blue-600 text-white font-extrabold tracking-wide uppercase text-sm rounded-xl shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 transition-all">+ Add Subject</button>` : `<p class="text-slate-500 text-xs font-black uppercase tracking-widest bg-slate-800 py-3 rounded-lg border border-slate-700">Switch to Creator Mode to add content.</p>`}
                 </div>
             `;
         }
@@ -419,41 +428,48 @@ window.app = {
 
             html += `
                 <div class="relative">
-                    <div class="mb-8 p-6 sm:p-8 rounded-2xl text-white ${subject.color} shadow-lg flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                        <div class="flex-1 w-full">
-                            <div class="flex items-center gap-3 mb-1">
-                                <h3 class="text-2xl font-bold">${subject.name}</h3>
-                                ${isEditMode ? `
-                                    <button onclick="app.editSubject('${subject.id}')" class="p-1.5 hover:bg-white/20 rounded transition-colors text-white/80 hover:text-white" title="Rename"><i class="ph-bold ph-pencil-simple"></i></button>
-                                    <button onclick="app.deleteSubject('${subject.id}')" class="p-1.5 hover:bg-red-500 rounded transition-colors text-white/80 hover:text-white" title="Delete"><i class="ph-bold ph-trash"></i></button>
+                    <div class="relative bg-slate-900 rounded-[2rem] border border-slate-800 shadow-xl overflow-hidden mb-8 group">
+                        <!-- Colored Accent Line -->
+                        <div class="absolute left-0 top-0 bottom-0 w-2.5 ${subject.color || 'bg-blue-600'}"></div>
+                        
+                        <div class="p-8 sm:p-10 flex flex-col sm:flex-row sm:items-start justify-between gap-6 pl-10 sm:pl-12">
+                            <div class="flex-1 w-full">
+                                <div class="flex items-center gap-4 mb-2">
+                                    <h3 class="text-3xl sm:text-4xl font-black text-white tracking-tight">${subject.name}</h3>
+                                    ${isEditMode ? `
+                                        <button onclick="app.editSubject('${subject.id}')" class="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white shadow-sm" title="Rename"><i class="ph-bold ph-pencil-simple"></i></button>
+                                        <button onclick="app.deleteSubject('${subject.id}')" class="p-2 bg-slate-800 hover:bg-red-500/20 border border-slate-700 hover:border-red-500/30 rounded-lg transition-colors text-slate-500 hover:text-red-400 shadow-sm" title="Delete"><i class="ph-bold ph-trash"></i></button>
+                                    ` : ''}
+                                </div>
+                                <p class="text-slate-500 font-bold tracking-widest uppercase text-xs">${subject.topics.length} Topics</p>
+                                
+                                ${!isEditMode && subjTotal > 0 ? `
+                                    <div class="mt-8 max-w-sm">
+                                        <div class="flex items-center justify-between text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">
+                                            <span>Progress</span>
+                                            <span class="${subject.color ? subject.color.replace('bg-', 'text-') : 'text-blue-400'}">${subjProgress}%</span>
+                                        </div>
+                                        <div class="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800 shadow-inner">
+                                            <div class="h-full ${subject.color || 'bg-blue-600'} rounded-full transition-all duration-700 shadow-[0_0_15px_rgba(255,255,255,0.2)]" style="width: ${subjProgress}%"></div>
+                                        </div>
+                                    </div>
                                 ` : ''}
                             </div>
-                            <p class="text-white/80 text-sm font-medium">${subject.topics.length} Topics</p>
-                            ${!isEditMode && subjTotal > 0 ? `
-                                <div class="mt-4">
-                                    <div class="flex items-center justify-between text-xs font-bold text-white mb-1.5 w-full max-w-xs">
-                                        <span>Subject Progress</span>
-                                        <span>${subjProgress}%</span>
-                                    </div>
-                                    <div class="w-full max-w-xs h-1.5 bg-black/20 rounded-full overflow-hidden">
-                                        <div class="h-full bg-white rounded-full transition-all duration-500" style="width: ${subjProgress}%"></div>
-                                    </div>
-                                </div>
+                            
+                            ${isEditMode ? `
+                                <button onclick="app.addTopic('${subject.id}')" class="px-6 py-4 bg-slate-800 hover:bg-slate-700 text-white font-extrabold uppercase tracking-widest rounded-xl transition-all text-xs flex items-center gap-2 shrink-0 border border-slate-700 shadow-sm">
+                                    <i class="ph-bold ph-plus text-base"></i> Add Topic
+                                </button>
                             ` : ''}
                         </div>
-                        ${isEditMode ? `
-                            <button onclick="app.addTopic('${subject.id}')" class="px-4 py-2 bg-white/20 hover:bg-white/30 text-white font-bold rounded-xl backdrop-blur-sm transition-all text-sm flex items-center gap-2 shrink-0 border border-white/20">
-                                <i class="ph-bold ph-plus"></i> Add Topic
-                            </button>
-                        ` : ''}
                     </div>
                     
-                    <div class="relative pl-2 sm:pl-12 flex flex-col gap-10">
+                    <div class="relative pl-2 sm:pl-16 flex flex-col gap-10">
                         <div class="skill-path-line hidden sm:block"></div>
             `;
 
             if(subject.topics.length === 0 && isEditMode) {
-                html += `<div class="text-slate-400 italic text-sm ml-12">No topics added yet.</div>`;
+                html += `<div class="text-slate-500 italic text-sm ml-16 font-medium">No topics added yet.</div>`;
             }
 
             subject.topics.forEach(topic => {
@@ -463,74 +479,77 @@ window.app = {
 
                 html += `
                     <div class="w-full z-10 relative">
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between bg-white/80 backdrop-blur-md py-3 px-5 rounded-2xl border border-slate-200 shadow-sm sm:ml-16 mb-6 gap-3 group">
-                            <div class="flex items-center gap-3">
-                                <h4 class="text-lg font-bold text-slate-700">${topic.name}</h4>
+                        <!-- Topic Header Card -->
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900 py-4 px-6 rounded-2xl border border-slate-800 shadow-lg sm:ml-8 mb-6 gap-4 relative">
+                            <!-- Connector Dot -->
+                            <div class="hidden sm:block absolute -left-[38px] top-1/2 -translate-y-1/2 w-4 h-4 bg-slate-950 border-4 border-slate-800 rounded-full z-10"></div>
+                            
+                            <div class="flex items-center gap-4">
+                                <h4 class="text-xl font-extrabold text-white tracking-wide">${topic.name}</h4>
                                 ${isEditMode ? `
-                                    <div class="flex gap-1">
-                                        <button onclick="app.editTopic('${subject.id}', '${topic.id}')" class="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Rename"><i class="ph-bold ph-pencil-simple"></i></button>
-                                        <button onclick="app.deleteTopic('${subject.id}', '${topic.id}')" class="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded" title="Delete"><i class="ph-bold ph-trash"></i></button>
+                                    <div class="flex gap-2">
+                                        <button onclick="app.editTopic('${subject.id}', '${topic.id}')" class="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors" title="Rename"><i class="ph-bold ph-pencil-simple"></i></button>
+                                        <button onclick="app.deleteTopic('${subject.id}', '${topic.id}')" class="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors" title="Delete"><i class="ph-bold ph-trash"></i></button>
                                     </div>
                                 ` : ''}
                                 ${!isEditMode && topTotal > 0 ? `
-                                    <div class="flex items-center gap-1.5 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 shadow-sm">
-                                        <i class="ph-bold ph-trend-up text-blue-500 text-xs"></i>
-                                        <span class="text-xs font-black text-blue-600">${topProgress}%</span>
+                                    <div class="flex items-center gap-2 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20">
+                                        <i class="ph-bold ph-trend-up text-blue-400 text-sm"></i>
+                                        <span class="text-xs font-black text-blue-400">${topProgress}%</span>
                                     </div>
                                 ` : ''}
                             </div>
                             ${isEditMode ? `
-                                <button onclick="app.addSubtopic('${subject.id}', '${topic.id}')" class="px-3 py-1.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-500 font-bold rounded-lg transition-all text-xs flex items-center gap-1">
-                                    <i class="ph-bold ph-plus"></i> Add Subtopic
+                                <button onclick="app.addSubtopic('${subject.id}', '${topic.id}')" class="px-4 py-2 bg-slate-800 hover:bg-blue-600/20 hover:border-blue-500/30 text-slate-300 hover:text-blue-400 font-black tracking-widest uppercase rounded-xl transition-all text-[10px] flex items-center gap-2 border border-slate-700 shadow-sm">
+                                    <i class="ph-bold ph-plus text-sm"></i> Subtopic
                                 </button>
                             ` : ''}
                         </div>
                         
-                        <div class="flex flex-wrap gap-4 sm:gap-6 ml-4 sm:ml-24">
+                        <div class="flex flex-wrap gap-5 sm:gap-6 ml-4 sm:ml-20">
                 `;
 
                 if(topic.subtopics.length === 0 && isEditMode) {
-                    html += `<div class="text-slate-400 italic text-xs">No subtopics created.</div>`;
+                    html += `<div class="text-slate-600 italic text-xs font-bold">No subtopics created.</div>`;
                 }
 
                 topic.subtopics.forEach(st => {
                     let isStComplete = !!st.isCompleted;
                     const hasContent = st.flashcards.length > 0 || st.questionSets.some(s => s.questions.length > 0);
                     
-                    let cardStyle = "bg-white border-slate-200 hover:border-blue-300";
+                    let cardStyle = "bg-slate-900 border-slate-700 hover:border-blue-500 hover:shadow-[0_0_25px_rgba(59,130,246,0.15)]";
                     if (!isEditMode && isStComplete) {
-                        cardStyle = "bg-green-50 border-green-200 shadow-sm";
+                        cardStyle = "bg-emerald-950/30 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.1)]";
                     } else if (!hasContent && !isEditMode) {
-                        cardStyle = "bg-slate-100 border-dashed border-slate-300 opacity-80";
+                        cardStyle = "bg-slate-900/50 border-dashed border-slate-800 opacity-50";
                     }
 
-                    let icon = hasContent ? '<i class="ph-fill ph-book-open text-blue-500 text-2xl"></i>' : '<i class="ph-fill ph-empty text-slate-300 text-2xl"></i>';
-                    if(!isEditMode && isStComplete) icon = '<i class="ph-fill ph-check-circle text-green-500 text-2xl"></i>';
+                    let icon = hasContent ? '<div class="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20 shadow-inner"><i class="ph-fill ph-book-open text-blue-400 text-2xl"></i></div>' : '<div class="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center border border-slate-700"><i class="ph-bold ph-empty text-slate-500 text-2xl"></i></div>';
+                    if(!isEditMode && isStComplete) icon = '<div class="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shadow-inner"><i class="ph-fill ph-check-circle text-emerald-400 text-3xl"></i></div>';
 
                     html += `
-                        <div class="relative flex flex-col w-[140px] group cursor-pointer" onclick="app.handleSubtopicClick('${st.id}')">
-                            <div class="relative z-10 flex flex-col p-4 rounded-2xl border-2 transition-all duration-200 ${cardStyle} shadow-sm active:scale-95 h-full">
-                                <div class="flex justify-between items-start mb-2">
+                        <div class="relative flex flex-col w-[170px] group cursor-pointer" onclick="app.handleSubtopicClick('${st.id}')">
+                            <div class="relative z-10 flex flex-col p-5 rounded-2xl border-2 transition-all duration-300 ${cardStyle} shadow-lg active:scale-95 h-full">
+                                <div class="flex justify-between items-start mb-5">
                                     ${icon}
                                     ${isEditMode ? `
                                         <div class="flex gap-1 relative z-20">
-                                            <button onclick="event.stopPropagation(); app.editSubtopicName('${subject.id}', '${topic.id}', '${st.id}')" class="p-1 text-slate-300 hover:text-blue-600 rounded" title="Rename"><i class="ph-fill ph-pencil-simple"></i></button>
-                                            <button onclick="event.stopPropagation(); app.deleteSubtopic('${subject.id}', '${topic.id}', '${st.id}')" class="p-1 text-slate-300 hover:text-red-500 rounded" title="Delete"><i class="ph-fill ph-trash"></i></button>
+                                            <button onclick="event.stopPropagation(); app.editSubtopicName('${subject.id}', '${topic.id}', '${st.id}')" class="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors" title="Rename"><i class="ph-fill ph-pencil-simple"></i></button>
+                                            <button onclick="event.stopPropagation(); app.deleteSubtopic('${subject.id}', '${topic.id}', '${st.id}')" class="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors" title="Delete"><i class="ph-fill ph-trash"></i></button>
                                         </div>
                                     ` : `
                                         <div class="ml-auto relative z-20" title="${isStComplete ? 'Mark Incomplete' : 'Mark Complete'}">
-                                            <input type="checkbox" ${isStComplete ? 'checked' : ''} onclick="event.stopPropagation(); app.toggleSubtopicComplete('${subject.id}', '${topic.id}', '${st.id}')" class="w-5 h-5 accent-green-500 cursor-pointer">
+                                            <input type="checkbox" ${isStComplete ? 'checked' : ''} onclick="event.stopPropagation(); app.toggleSubtopicComplete('${subject.id}', '${topic.id}', '${st.id}')" class="w-6 h-6 accent-emerald-500 cursor-pointer rounded-md bg-slate-800 border-slate-700">
                                         </div>
                                     `}
                                 </div>
-                                <span class="text-sm font-bold leading-snug mt-auto flex items-start justify-between gap-1 w-full">
+                                <span class="text-[15px] font-black leading-tight mt-auto flex items-start justify-between gap-2 w-full text-slate-200 group-hover:text-white transition-colors">
                                     <span>${st.name}</span>
                                 </span>
                             </div>
                         </div>
                     `;
                 });
-
                 html += `</div></div>`;
             });
             html += `</div></div>`;
@@ -538,9 +557,9 @@ window.app = {
 
         if (isEditMode && data.subjects.length > 0) {
             html += `
-                <div class="mt-8 text-center">
-                    <button onclick="app.addSubject()" class="px-6 py-4 border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 text-slate-500 hover:text-blue-600 font-bold rounded-2xl transition-all flex items-center justify-center gap-2 w-full max-w-sm mx-auto">
-                        <i class="ph-bold ph-plus text-xl"></i> Add Another Subject
+                <div class="mt-12 text-center pb-8">
+                    <button onclick="app.addSubject()" class="px-8 py-5 border-2 border-dashed border-slate-800 hover:border-blue-500 hover:bg-slate-900 text-slate-500 hover:text-blue-400 font-black rounded-2xl transition-all flex items-center justify-center gap-3 w-full max-w-sm mx-auto shadow-sm tracking-widest uppercase text-sm">
+                        <i class="ph-bold ph-plus text-2xl"></i> Add Subject
                     </button>
                 </div>
             `;
@@ -548,36 +567,36 @@ window.app = {
         container.innerHTML = html + `</div>`;
     },
 
-    // --- Subtopic Editor (Flashcards & Question Sets) ---
+    // --- Subtopic Editor ---
     renderSubtopicEditor(container) {
         const stData = this.findSubtopic(activeSubtopicId);
         if (!stData) return;
         const st = stData.subtopic;
 
         let html = `
-            <div class="max-w-5xl mx-auto">
-                <div class="mb-8">
-                    <h1 class="text-3xl font-extrabold text-slate-800">${st.name}</h1>
-                    <p class="text-slate-500 font-medium mt-1">Manage Flashcards & Question Sets</p>
+            <div class="max-w-6xl mx-auto">
+                <div class="mb-10 p-8 bg-slate-900 border border-slate-800 rounded-[2rem] shadow-2xl">
+                    <h1 class="text-4xl font-black text-white tracking-tight">${st.name}</h1>
+                    <p class="text-slate-500 font-bold mt-2 uppercase tracking-widest text-xs">Manage Flashcards & Question Sets</p>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <!-- Flashcards Section -->
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
-                        <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
-                            <h3 class="font-bold text-lg flex items-center gap-2 text-slate-700"><i class="ph-fill ph-cards text-blue-500 text-xl"></i> Flashcards (${st.flashcards.length})</h3>
-                            <button onclick="app.showFlashcardForm()" class="px-3 py-1.5 bg-white border border-slate-200 shadow-sm hover:border-blue-400 rounded-lg text-sm font-bold text-blue-600 transition-all">+ Add</button>
+                    <div class="bg-slate-900 rounded-[2rem] border border-slate-800 shadow-2xl overflow-hidden flex flex-col h-[700px]">
+                        <div class="p-6 border-b border-slate-800 flex items-center justify-between bg-blue-900/10">
+                            <h3 class="font-extrabold text-xl flex items-center gap-3 text-white"><i class="ph-fill ph-cards text-blue-400 text-2xl"></i> Flashcards <span class="bg-slate-800 text-slate-400 px-3 py-1 rounded-lg text-xs tracking-widest border border-slate-700">${st.flashcards.length}</span></h3>
+                            <button onclick="app.showFlashcardForm()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 rounded-xl text-xs font-black tracking-widest uppercase transition-all">+ Add Card</button>
                         </div>
-                        <div class="p-4 flex-1 overflow-y-auto space-y-3">
+                        <div class="p-5 flex-1 overflow-y-auto space-y-4 bg-slate-950/50">
         `;
-        if(st.flashcards.length === 0) html += `<div class="text-center py-8 text-slate-400 text-sm font-medium">No flashcards yet.</div>`;
+        if(st.flashcards.length === 0) html += `<div class="text-center py-12 text-slate-600 text-xs font-black tracking-widest uppercase border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/50">No flashcards yet.</div>`;
         st.flashcards.forEach((fc, idx) => {
             html += `
-                <div class="p-4 rounded-xl border border-slate-100 bg-slate-50 relative group">
-                    <button onclick="app.deleteItem('fc', ${idx})" class="absolute top-2 right-2 text-red-400 hover:text-red-600 p-1 hidden group-hover:block bg-white rounded shadow-sm border border-slate-200"><i class="ph-bold ph-trash"></i></button>
-                    <p class="font-bold text-sm text-slate-700 mb-2 border-b border-slate-200 pb-2">Q: ${fc.front}</p>
-                    ${fc.img ? `<img src="${fc.img}" class="max-h-32 object-contain my-2 rounded border border-slate-200">` : ''}
-                    ${fc.back ? `<p class="text-sm text-slate-600 line-clamp-2">A: ${fc.back}</p>` : ''}
+                <div class="p-6 rounded-2xl border border-slate-800 bg-slate-900 relative group shadow-lg hover:border-slate-600 transition-colors">
+                    <button onclick="app.deleteItem('fc', ${idx})" class="absolute top-4 right-4 text-slate-600 hover:text-red-400 p-2 hidden group-hover:block bg-slate-950 rounded-lg shadow-sm border border-slate-800 transition-colors"><i class="ph-bold ph-trash text-lg"></i></button>
+                    <p class="font-extrabold text-base text-white mb-4 pb-4 border-b border-slate-800 leading-relaxed"><span class="text-slate-500 mr-2 uppercase text-xs tracking-widest">Q:</span>${fc.front}</p>
+                    ${fc.img ? `<img src="${fc.img}" class="max-h-48 object-contain my-4 rounded-xl border border-slate-700 bg-slate-950 p-2 w-full shadow-inner">` : ''}
+                    ${fc.back ? `<p class="text-sm text-slate-300 line-clamp-4 font-bold leading-relaxed"><span class="text-slate-600 mr-2 uppercase text-xs tracking-widest">A:</span>${fc.back}</p>` : ''}
                 </div>
             `;
         });
@@ -585,24 +604,24 @@ window.app = {
 
         // Question Sets Section
         html += `
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
-                        <div class="p-5 border-b border-slate-100 flex items-center justify-between bg-green-50/50">
-                            <h3 class="font-bold text-lg flex items-center gap-2 text-slate-700"><i class="ph-fill ph-stack text-green-500 text-xl"></i> Question Sets (${st.questionSets.length})</h3>
-                            <button onclick="app.promptInput('New Question Set', 'Set Name', 'app._createSet(val)')" class="px-3 py-1.5 bg-white border border-slate-200 shadow-sm hover:border-green-400 rounded-lg text-sm font-bold text-green-600 transition-all">+ New Set</button>
+                    <div class="bg-slate-900 rounded-[2rem] border border-slate-800 shadow-2xl overflow-hidden flex flex-col h-[700px]">
+                        <div class="p-6 border-b border-slate-800 flex items-center justify-between bg-emerald-900/10">
+                            <h3 class="font-black text-xl flex items-center gap-3 text-white"><i class="ph-fill ph-stack text-emerald-400 text-2xl"></i> Question Sets <span class="bg-slate-800 text-slate-400 px-3 py-1 rounded-lg text-xs tracking-widest border border-slate-700">${st.questionSets.length}</span></h3>
+                            <button onclick="app.promptInput('New Question Set', 'Set Name', 'app._createSet(val)')" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_4px_0_0_#065f46] active:translate-y-1 rounded-xl text-xs font-black tracking-widest uppercase transition-all">+ New Set</button>
                         </div>
-                        <div class="p-4 flex-1 overflow-y-auto space-y-3">
+                        <div class="p-5 flex-1 overflow-y-auto space-y-4 bg-slate-950/50">
         `;
-        if(st.questionSets.length === 0) html += `<div class="text-center py-8 text-slate-400 text-sm font-medium">No sets created yet.</div>`;
+        if(st.questionSets.length === 0) html += `<div class="text-center py-12 text-slate-600 text-xs font-black tracking-widest uppercase border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/50">No sets created yet.</div>`;
         st.questionSets.forEach((set, idx) => {
             html += `
-                <div class="p-4 rounded-xl border border-slate-200 bg-white shadow-sm flex items-center justify-between group">
+                <div class="p-6 rounded-2xl border border-slate-800 bg-slate-900 shadow-lg flex items-center justify-between group hover:border-emerald-500/50 transition-colors">
                     <div>
-                        <h4 class="font-bold text-slate-700">${set.name}</h4>
-                        <p class="text-xs font-medium text-slate-400 mt-1">${set.questions.length} Questions</p>
+                        <h4 class="font-black text-white text-lg">${set.name}</h4>
+                        <p class="text-[10px] font-black text-slate-500 mt-1 uppercase tracking-widest">${set.questions.length} Questions</p>
                     </div>
-                    <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onclick="app.editSet('${set.id}')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-bold transition-colors">Edit</button>
-                        <button onclick="app.deleteItem('set', ${idx})" class="p-1.5 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg transition-colors"><i class="ph-bold ph-trash"></i></button>
+                    <div class="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onclick="app.editSet('${set.id}')" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-black tracking-widest uppercase transition-colors shadow-sm border border-slate-700">Edit</button>
+                        <button onclick="app.deleteItem('set', ${idx})" class="p-2.5 bg-slate-950 text-slate-500 hover:text-red-400 border border-slate-800 hover:border-red-500/30 rounded-lg transition-colors"><i class="ph-bold ph-trash text-lg"></i></button>
                     </div>
                 </div>
             `;
@@ -632,7 +651,6 @@ window.app = {
             set.questions.splice(idx, 1);
             this.save(); this.setView('set-editor'); return;
         }
-        
         this.save(); this.setView('subtopic-editor');
     },
 
@@ -641,38 +659,43 @@ window.app = {
         if(!set) return;
 
         let html = `
-            <div class="max-w-3xl mx-auto">
-                <div class="mb-8 flex items-center justify-between">
+            <div class="max-w-4xl mx-auto">
+                <div class="mb-8 flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900 p-8 rounded-[2rem] border border-slate-800 shadow-2xl gap-4">
                     <div>
-                        <h1 class="text-3xl font-extrabold text-slate-800">${set.name}</h1>
-                        <p class="text-slate-500 font-medium mt-1">Manage Questions</p>
+                        <h1 class="text-4xl font-black text-white tracking-tight">${set.name}</h1>
+                        <p class="text-slate-500 font-bold mt-2 uppercase tracking-widest text-xs">Manage Questions</p>
                     </div>
-                    <button onclick="app.showQuestionForm()" class="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white shadow-md rounded-xl font-bold transition-all flex items-center gap-2">
-                        <i class="ph-bold ph-plus"></i> Add Question
+                    <button onclick="app.showQuestionForm()" class="px-6 py-4 bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_4px_0_0_#065f46] active:translate-y-1 rounded-2xl font-black tracking-widest uppercase text-sm transition-all flex items-center gap-2">
+                        <i class="ph-bold ph-plus text-xl"></i> Add Question
                     </button>
                 </div>
-                <div class="space-y-4">
+                <div class="space-y-6">
         `;
         
-        if(set.questions.length === 0) html += `<div class="text-center py-12 text-slate-400 font-medium bg-white rounded-2xl border border-slate-200 border-dashed">No questions in this set yet.</div>`;
+        if(set.questions.length === 0) html += `<div class="text-center py-16 text-slate-600 text-sm font-black tracking-widest uppercase bg-slate-900 rounded-[2rem] border-2 border-slate-800 border-dashed">No questions in this set yet.</div>`;
         
         set.questions.forEach((q, idx) => {
-            let typeBadge = q.type === 'mcq' ? 'bg-blue-100 text-blue-700' : (q.type==='msq' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700');
+            let typeBadge = q.type === 'mcq' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : (q.type==='msq' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : 'bg-orange-500/10 text-orange-400 border border-orange-500/20');
             html += `
-                <div class="p-5 rounded-2xl border border-slate-200 bg-white relative shadow-sm group">
-                    <button onclick="app.deleteItem('q', ${idx})" class="absolute top-4 right-4 text-slate-400 hover:text-red-500 p-1 bg-slate-50 rounded-lg hover:bg-red-50 transition-colors"><i class="ph-bold ph-trash text-lg"></i></button>
-                    <div class="flex items-center gap-2 mb-3 border-b border-slate-100 pb-3">
-                        <span class="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded ${typeBadge}">${q.type}</span>
+                <div class="p-6 sm:p-8 rounded-[2rem] border border-slate-800 bg-slate-900 relative shadow-xl group hover:border-slate-600 transition-colors">
+                    <button onclick="app.deleteItem('q', ${idx})" class="absolute top-6 right-6 text-slate-600 hover:text-red-400 p-2.5 bg-slate-950 rounded-xl hover:bg-slate-800 transition-colors border border-slate-800"><i class="ph-bold ph-trash text-xl"></i></button>
+                    
+                    <div class="flex items-center gap-2 mb-6 border-b border-slate-800 pb-5">
+                        <span class="text-[10px] uppercase font-black px-3 py-1.5 rounded-lg ${typeBadge} tracking-widest">${q.type}</span>
                     </div>
-                    ${q.img ? `<img src="${q.img}" class="max-h-24 object-contain mb-3 rounded-lg border border-slate-200">` : ''}
-                    <p class="font-bold text-slate-700 mb-3">${q.text}</p>
-                    <div class="text-sm text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                        ${q.type === 'num' ? `<span class="font-bold">Answer:</span> ${q.correct}` : `<span class="font-bold">Options:</span> ${q.options.join(', ')}`}
+                    
+                    ${q.img ? `<img src="${q.img}" class="max-h-64 object-contain mb-6 rounded-2xl border border-slate-700 bg-slate-950 p-2 w-full shadow-inner">` : ''}
+                    <p class="font-black text-white mb-6 text-xl sm:text-2xl leading-snug tracking-tight">${q.text}</p>
+                    
+                    <div class="text-sm font-bold text-slate-300 bg-slate-950 p-6 rounded-2xl border border-slate-800 shadow-inner">
+                        ${q.type === 'num' ? `<span class="font-black text-slate-600 uppercase mr-3 tracking-widest text-[10px]">Answer:</span> <span class="text-emerald-400 text-xl font-black">${q.correct}</span>` : `<span class="font-black text-slate-600 uppercase mr-3 tracking-widest text-[10px] block mb-3">Options:</span> <ul class="list-disc pl-5 space-y-2">${q.options.map((o, i) => {
+                            let isC = q.type==='mcq' ? i===q.correct : q.correct.includes(i);
+                            return `<li class="${isC ? 'text-emerald-400 font-black' : 'text-slate-400'}">${o}</li>`;
+                        }).join('')}</ul>`}
                     </div>
                 </div>
             `;
         });
-        
         html += `</div></div>`;
         container.innerHTML = html;
     },
@@ -681,20 +704,24 @@ window.app = {
     showFlashcardForm() {
         app.tempImageUrl = '';
         const html = `
-            <div class="space-y-4">
-                <div><label class="block text-sm font-bold text-slate-600 mb-1">Front (Question/Concept)</label>
-                <textarea id="fc-front" rows="2" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-slate-700"></textarea></div>
+            <div class="space-y-6">
+                <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Front (Question)</label>
+                <textarea id="fc-front" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-bold text-lg shadow-inner"></textarea></div>
                 
-                <div><label class="block text-sm font-bold text-slate-600 mb-1">Back (Answer/Details) <span class="font-normal text-slate-400">- Optional if image provided</span></label>
-                <textarea id="fc-back" rows="3" class="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-slate-700"></textarea></div>
+                <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Back (Answer) <span class="text-slate-600">- Optional if image</span></label>
+                <textarea id="fc-back" rows="3" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-medium shadow-inner placeholder-slate-700" placeholder="Type answer details here..."></textarea></div>
                 
-                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <label class="block text-sm font-bold text-slate-600 mb-2">Upload Image (Optional)</label>
-                    <input type="file" accept="image/*" onchange="app.handleImageUpload(event)" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 transition-all cursor-pointer">
+                <div class="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
+                    <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Image Attachment</label>
+                    <input type="file" accept="image/*" onchange="app.handleImageUpload(event)" class="w-full text-sm text-slate-400 file:mr-4 file:py-3 file:px-5 file:rounded-xl file:border-0 file:text-xs file:font-black file:tracking-widest file:uppercase file:bg-blue-600 file:text-white hover:file:bg-blue-500 transition-all cursor-pointer mb-5">
+                    
+                    <div class="flex items-center gap-4 mb-4"><div class="h-px bg-slate-800 flex-1"></div><span class="text-[10px] text-slate-600 font-black uppercase tracking-widest">OR PASTE URL</span><div class="h-px bg-slate-800 flex-1"></div></div>
+                    
+                    <input type="text" id="img-url-input" placeholder="https://..." oninput="app.handleImageUrl(this.value)" class="w-full px-5 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-white focus:border-blue-500 outline-none font-mono text-sm shadow-inner">
                     <div id="img-preview"></div>
                 </div>
 
-                <button onclick="app.saveFlashcard()" class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition shadow-md">Add Flashcard</button>
+                <button onclick="app.saveFlashcard()" class="w-full py-4 bg-blue-600 text-white font-black tracking-widest uppercase text-sm rounded-xl hover:bg-blue-500 transition shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 mt-6 border border-blue-500">Save Flashcard</button>
             </div>
         `;
         this.showModal("New Flashcard", html);
@@ -714,28 +741,32 @@ window.app = {
     showQuestionForm() {
         app.tempImageUrl = '';
         const html = `
-            <div class="space-y-4">
+            <div class="space-y-6">
                 <div>
-                    <label class="block text-sm font-bold text-slate-600 mb-1">Question Type</label>
-                    <select id="q-type" onchange="app.renderQuestionFields()" class="w-full px-4 py-3 rounded-xl border border-slate-300 outline-none bg-white font-medium">
+                    <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Question Type</label>
+                    <select id="q-type" onchange="app.renderQuestionFields()" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white outline-none font-bold shadow-inner appearance-none cursor-pointer tracking-wide">
                         <option value="mcq">Multiple Choice (MCQ)</option>
                         <option value="msq">Multiple Select (MSQ)</option>
                         <option value="num">Numerical</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-bold text-slate-600 mb-1">Question Text</label>
-                    <textarea id="q-text" rows="2" class="w-full px-4 py-3 rounded-xl border border-slate-300 outline-none text-slate-700"></textarea>
+                    <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Question Text</label>
+                    <textarea id="q-text" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none font-bold text-lg shadow-inner"></textarea>
                 </div>
                 
-                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <label class="block text-sm font-bold text-slate-600 mb-2">Upload Image (Optional)</label>
-                    <input type="file" accept="image/*" onchange="app.handleImageUpload(event)" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200 transition-all cursor-pointer">
+                <div class="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
+                    <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Image Attachment</label>
+                    <input type="file" accept="image/*" onchange="app.handleImageUpload(event)" class="w-full text-sm text-slate-400 file:mr-4 file:py-3 file:px-5 file:rounded-xl file:border-0 file:text-xs file:font-black file:tracking-widest file:uppercase file:bg-blue-600 file:text-white hover:file:bg-blue-500 transition-all cursor-pointer mb-5">
+                    
+                    <div class="flex items-center gap-4 mb-4"><div class="h-px bg-slate-800 flex-1"></div><span class="text-[10px] text-slate-600 font-black uppercase tracking-widest">OR PASTE URL</span><div class="h-px bg-slate-800 flex-1"></div></div>
+                    
+                    <input type="text" id="img-url-input" placeholder="https://..." oninput="app.handleImageUrl(this.value)" class="w-full px-5 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-white focus:border-blue-500 outline-none font-mono text-sm shadow-inner">
                     <div id="img-preview"></div>
                 </div>
 
-                <div id="q-dynamic-fields" class="p-4 bg-slate-50 rounded-xl border border-slate-200"></div>
-                <button onclick="app.saveQuestion()" class="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition shadow-md">Add Question</button>
+                <div id="q-dynamic-fields" class="p-5 bg-slate-900 rounded-2xl border border-slate-800 shadow-inner"></div>
+                <button onclick="app.saveQuestion()" class="w-full py-4 bg-emerald-600 text-white font-black tracking-widest uppercase text-sm rounded-xl hover:bg-emerald-500 transition shadow-[0_4px_0_0_#065f46] active:translate-y-1 mt-6 border border-emerald-500">Save Question</button>
             </div>
         `;
         this.showModal("New Question", html);
@@ -745,15 +776,15 @@ window.app = {
         const type = document.getElementById('q-type').value;
         const container = document.getElementById('q-dynamic-fields');
         if (type === 'num') {
-            container.innerHTML = `<label class="block text-sm font-bold text-slate-600 mb-1">Exact Answer</label><input type="number" step="any" id="q-num-ans" class="w-full px-4 py-3 rounded-xl border border-slate-300 outline-none font-mono">`;
+            container.innerHTML = `<label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Exact Answer</label><input type="number" step="any" id="q-num-ans" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white outline-none font-mono font-bold text-xl shadow-inner">`;
         } else {
-            let html = `<label class="block text-sm font-bold text-slate-600 mb-2">Options (Mark correct answer)</label><div class="space-y-2">`;
+            let html = `<label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Options (Select Correct)</label><div class="space-y-3">`;
             const inputType = type === 'mcq' ? 'radio' : 'checkbox';
             for(let i=0; i<4; i++) {
                 html += `
-                    <div class="flex items-center gap-3 bg-white p-2 border border-slate-200 rounded-lg">
-                        <input type="${inputType}" name="q-correct-opt" id="q-correct-opt-${i}" value="${i}" class="w-5 h-5 cursor-pointer accent-blue-600">
-                        <input type="text" id="q-opt-${i}" placeholder="Option ${i+1}" class="flex-1 outline-none text-sm font-medium text-slate-700">
+                    <div class="flex items-center gap-4 bg-slate-950 p-3 rounded-xl border border-slate-700 shadow-inner group focus-within:border-emerald-500 transition-colors">
+                        <input type="${inputType}" name="q-correct-opt" id="q-correct-opt-${i}" value="${i}" class="w-6 h-6 cursor-pointer accent-emerald-500 ml-2">
+                        <input type="text" id="q-opt-${i}" placeholder="Option ${i+1}" class="flex-1 outline-none text-base font-bold bg-transparent text-white placeholder-slate-600 py-1">
                     </div>
                 `;
             }
@@ -798,7 +829,6 @@ window.app = {
         this.save(); this.closeModal(); this.setView('set-editor');
     },
 
-    // Study Engine
     startStudy(type, setId = null) {
         document.getElementById('action-sheet').classList.add('hidden');
         const stData = this.findSubtopic(activeSubtopicId);
@@ -810,7 +840,7 @@ window.app = {
             activeSetId = setId;
         }
         
-        studyContext = { type, step: 0, score: 0, answers: {}, isFlipped: false, isChecked: false };
+        studyContext = { type, step: 0, score: 0, answers: {}, isFlipped: false, isChecked: false, timeSpent: [], qStart: Date.now() };
         this.setView(type === 'flashcards' ? 'fc-viewer' : 'quiz-player');
     },
 
@@ -822,22 +852,26 @@ window.app = {
         const progress = (studyContext.step / cards.length) * 100;
 
         container.innerHTML = `
-            <div class="max-w-2xl mx-auto h-full flex flex-col pt-4">
-                <div class="w-full h-2 bg-slate-200 rounded-full mb-8"><div class="h-full bg-blue-500 transition-all duration-300" style="width:${progress}%"></div></div>
-                <div class="flex-1 relative perspective-1000 cursor-pointer w-full" onclick="app.toggleFlip()">
-                    <div class="w-full h-full duration-500 transform-style-3d relative rounded-3xl shadow-xl ${studyContext.isFlipped ? 'rotate-y-180' : ''}">
-                        <div class="absolute inset-0 backface-hidden bg-white border-2 border-slate-100 rounded-3xl p-8 flex flex-col items-center justify-center text-center">
-                            <span class="text-xs font-bold text-blue-500 mb-6 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-wider">Tap to flip</span>
-                            <h3 class="text-3xl font-extrabold text-slate-800">${card.front}</h3>
+            <div class="max-w-5xl mx-auto h-full flex flex-col pt-4">
+                <div class="w-full h-3 bg-slate-900 rounded-full mb-10 overflow-hidden border border-slate-800 shadow-inner"><div class="h-full bg-blue-500 transition-all duration-500 shadow-[0_0_15px_rgba(59,130,246,0.8)]" style="width:${progress}%"></div></div>
+                <div class="flex-1 relative perspective-1000 cursor-pointer w-full min-h-[500px]" onclick="app.toggleFlip()">
+                    <div class="w-full h-full duration-500 transform-style-3d relative rounded-[3rem] shadow-2xl ${studyContext.isFlipped ? 'rotate-y-180' : ''}">
+                        
+                        <!-- Front -->
+                        <div class="absolute inset-0 backface-hidden bg-slate-900 border-2 border-slate-800 rounded-[3rem] p-8 sm:p-14 flex flex-col items-center justify-center text-center shadow-2xl">
+                            <span class="absolute top-10 left-1/2 transform -translate-x-1/2 text-[10px] font-black text-blue-400 bg-blue-500/10 px-5 py-2.5 rounded-xl uppercase tracking-widest border border-blue-500/20">Tap to flip</span>
+                            <h3 class="text-4xl sm:text-6xl font-black text-white leading-tight tracking-tight">${card.front}</h3>
                         </div>
-                        <div class="absolute inset-0 backface-hidden rotate-y-180 bg-blue-50 border-2 border-blue-200 rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center text-center overflow-hidden">
-                            ${card.img ? `<div class="flex-1 w-full min-h-0 flex items-center justify-center mb-4"><img src="${card.img}" class="max-w-full max-h-full object-contain rounded-xl shadow-sm border border-white/50"></div>` : ''}
-                            ${card.back ? `<div class="shrink-0 overflow-y-auto max-h-1/3 w-full"><p class="text-xl font-bold text-blue-900 whitespace-pre-line leading-relaxed">${card.back}</p></div>` : ''}
+
+                        <!-- Back -->
+                        <div class="absolute inset-0 backface-hidden rotate-y-180 bg-slate-900 border-2 border-blue-500/30 rounded-[3rem] p-8 sm:p-14 flex flex-col items-center justify-center text-center overflow-hidden shadow-[0_0_50px_rgba(59,130,246,0.15)]">
+                            ${card.img ? `<div class="flex-1 w-full min-h-0 flex items-center justify-center mb-8"><img src="${card.img}" class="max-w-full max-h-[400px] object-contain rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-3"></div>` : ''}
+                            ${card.back ? `<div class="shrink-0 overflow-y-auto max-h-1/2 w-full"><p class="text-2xl sm:text-4xl font-extrabold text-blue-100 whitespace-pre-line leading-relaxed">${card.back}</p></div>` : ''}
                         </div>
                     </div>
                 </div>
-                <div class="mt-8 mb-4">
-                    <button onclick="event.stopPropagation(); app.nextCard()" class="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-2xl shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 text-lg">Got It</button>
+                <div class="mt-12 mb-6">
+                    <button onclick="event.stopPropagation(); app.nextCard()" class="w-full py-6 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-3xl shadow-[0_8px_0_0_#1e3a8a] active:translate-y-2 text-2xl tracking-widest uppercase transition-all">Got It!</button>
                 </div>
             </div>
         `;
@@ -855,47 +889,47 @@ window.app = {
 
         let optionsHtml = '';
         if (q.type === 'num') {
-            let style = isChecked ? (studyContext.answers[studyContext.step] == q.correct ? "border-green-500 bg-green-50 text-green-700" : "border-red-500 bg-red-50 text-red-700") : "border-slate-300 focus:border-blue-500";
-            let reveal = isChecked ? `<div class="mt-4 p-3 bg-slate-100 rounded-xl font-bold text-slate-600">Correct Answer: <span class="text-blue-600">${q.correct}</span></div>` : "";
-            optionsHtml = `<div class="mt-8"><input type="number" step="any" ${isChecked?'disabled':''} value="${studyContext.answers[studyContext.step]||''}" oninput="app.selectQuizAnswer(this.value)" class="w-full text-center text-3xl font-bold py-6 rounded-2xl border-2 ${style} outline-none">${reveal}</div>`;
+            let style = isChecked ? (studyContext.answers[studyContext.step] == q.correct ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-red-500 bg-red-500/10 text-red-400") : "border-slate-700 bg-slate-950 text-white focus:border-blue-500 shadow-inner";
+            let reveal = isChecked ? `<div class="mt-8 p-6 bg-slate-900 border border-slate-800 rounded-2xl font-black text-slate-400 text-xl tracking-widest uppercase shadow-inner text-center">Correct Answer: <span class="text-emerald-400 ml-3 text-2xl">${q.correct}</span></div>` : "";
+            optionsHtml = `<div class="mt-12"><input type="number" step="any" ${isChecked?'disabled':''} value="${studyContext.answers[studyContext.step]||''}" oninput="app.selectQuizAnswer(this.value)" class="w-full text-center text-5xl sm:text-6xl font-black py-12 rounded-[2rem] border-4 ${style} outline-none shadow-2xl transition-all shadow-inner">${reveal}</div>`;
         } else {
-            optionsHtml = `<div class="mt-8 space-y-4">`;
+            optionsHtml = `<div class="mt-12 space-y-5">`;
             const cur = studyContext.answers[studyContext.step] || (q.type === 'msq' ? [] : null);
             q.options.forEach((opt, idx) => {
-                let btnStyle = "border-slate-200 bg-white hover:bg-slate-50", icon = "";
+                let btnStyle = "border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300", icon = "";
                 if (isChecked) {
                     const isCorrectOpt = q.type === 'mcq' ? q.correct === idx : q.correct.includes(idx);
                     const isSel = q.type === 'mcq' ? cur === idx : cur.includes(idx);
-                    if (isCorrectOpt) { btnStyle = "border-green-500 bg-green-50 text-green-800"; icon = `<i class="ph-bold ph-check-circle text-green-500 text-2xl"></i>`; } 
-                    else if (isSel) { btnStyle = "border-red-400 bg-red-50 text-red-700"; icon = `<i class="ph-bold ph-x-circle text-red-500 text-2xl"></i>`; } 
-                    else btnStyle = "border-slate-100 bg-slate-50 opacity-50";
+                    if (isCorrectOpt) { btnStyle = "border-emerald-500 bg-emerald-500/20 text-emerald-300 shadow-[0_0_25px_rgba(16,185,129,0.2)]"; icon = `<i class="ph-bold ph-check-circle text-emerald-400 text-4xl"></i>`; } 
+                    else if (isSel) { btnStyle = "border-red-500 bg-red-500/20 text-red-300 shadow-[0_0_25px_rgba(239,68,68,0.2)]"; icon = `<i class="ph-bold ph-x-circle text-red-500 text-4xl"></i>`; } 
+                    else btnStyle = "border-slate-800 bg-slate-950/50 opacity-30";
                 } else {
-                    if ((q.type === 'mcq' && cur === idx) || (q.type === 'msq' && cur.includes(idx))) btnStyle = "border-blue-500 bg-blue-50 text-blue-700 border-2";
+                    if ((q.type === 'mcq' && cur === idx) || (q.type === 'msq' && cur.includes(idx))) btnStyle = "border-blue-500 bg-blue-600/20 text-blue-200 border-2 shadow-[0_0_20px_rgba(59,130,246,0.25)] scale-[1.02]";
                 }
-                optionsHtml += `<button ${isChecked?'':`onclick="app.selectQuizAnswer(${idx})"`} class="w-full text-left p-5 rounded-2xl border-2 ${btnStyle} font-bold text-lg flex items-center justify-between transition-all"><span>${opt}</span>${icon}</button>`;
+                optionsHtml += `<button ${isChecked?'':`onclick="app.selectQuizAnswer(${idx})"`} class="w-full text-left p-6 sm:p-8 rounded-[2rem] border-2 ${btnStyle} font-bold text-xl sm:text-2xl flex items-center justify-between transition-all"><span>${opt}</span>${icon}</button>`;
             });
             optionsHtml += `</div>`;
-            if(q.type==='msq') optionsHtml += `<p class="mt-4 text-center text-sm font-bold text-purple-600 bg-purple-100 py-1.5 rounded-lg border border-purple-200">Select all that apply</p>`;
+            if(q.type==='msq') optionsHtml += `<p class="mt-8 text-center text-xs font-black text-purple-400 bg-purple-500/10 py-3 rounded-xl border border-purple-500/20 uppercase tracking-widest shadow-sm">Select all that apply</p>`;
         }
 
         let footerHtml = "";
         if (isChecked) {
             const isCorrect = this.evalQuizAnswer(q, studyContext.answers[studyContext.step]);
-            const feedback = isCorrect ? `<div class="text-green-700 font-extrabold text-xl">Awesome!</div>` : `<div class="text-red-700 font-extrabold text-xl">Not quite right.</div>`;
-            footerHtml = `<div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 z-40"><div class="max-w-2xl mx-auto flex items-center justify-between">${feedback}<button onclick="app.nextQuizQuestion()" class="px-8 py-4 bg-green-500 text-white font-extrabold rounded-2xl shadow-[0_4px_0_0_#16a34a] active:translate-y-1">Continue</button></div></div>`;
+            const feedback = isCorrect ? `<div class="text-emerald-400 font-black text-3xl uppercase tracking-widest flex items-center gap-4"><i class="ph-fill ph-check-circle text-4xl"></i> Awesome!</div>` : `<div class="text-red-400 font-black text-3xl uppercase tracking-widest flex items-center gap-4"><i class="ph-fill ph-warning-circle text-4xl"></i> Review This.</div>`;
+            footerHtml = `<div class="fixed bottom-0 left-0 right-0 bg-slate-950 border-t border-slate-900 p-6 sm:p-8 z-40 shadow-[0_-20px_50px_rgba(0,0,0,0.8)]"><div class="max-w-5xl mx-auto flex flex-col sm:flex-row gap-6 items-center justify-between">${feedback}<button onclick="app.nextQuizQuestion()" class="w-full sm:w-auto px-16 py-6 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl shadow-[0_8px_0_0_#065f46] active:translate-y-2 text-xl tracking-widest uppercase transition-all">Continue</button></div></div>`;
         } else {
             const hasAns = (q.type!=='msq'&&q.type!=='num'&&studyContext.answers[studyContext.step]!=null) || (q.type==='msq'&&studyContext.answers[studyContext.step]?.length>0) || (q.type==='num'&&studyContext.answers[studyContext.step]);
-            footerHtml = `<div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 z-40"><div class="max-w-2xl mx-auto flex justify-end"><button ${hasAns?'':'disabled'} onclick="app.checkQuizAnswer()" class="px-12 py-4 ${hasAns?'bg-blue-600 text-white shadow-[0_4px_0_0_#1e3a8a] hover:bg-blue-500':'bg-slate-200 text-slate-400 cursor-not-allowed'} font-extrabold rounded-2xl active:translate-y-1 transition-all">Check</button></div></div>`;
+            footerHtml = `<div class="fixed bottom-0 left-0 right-0 bg-slate-950 border-t border-slate-900 p-6 sm:p-8 z-40 shadow-[0_-20px_50px_rgba(0,0,0,0.8)]"><div class="max-w-5xl mx-auto flex justify-end"><button ${hasAns?'':'disabled'} onclick="app.checkQuizAnswer()" class="w-full sm:w-auto px-20 py-6 ${hasAns?'bg-blue-600 text-white shadow-[0_8px_0_0_#1e3a8a] hover:bg-blue-500 border border-blue-400':'bg-slate-900 text-slate-700 shadow-[0_8px_0_0_#0f172a] cursor-not-allowed border border-slate-800'} font-black rounded-2xl active:translate-y-2 transition-all text-2xl uppercase tracking-widest">Check</button></div></div>`;
         }
 
         container.innerHTML = `
-            <div class="max-w-2xl mx-auto h-full flex flex-col pt-4 pb-32 animate-pop">
-                <div class="w-full flex items-center justify-between mb-6">
-                    <div class="flex-1 h-2 bg-slate-200 rounded-full mr-4"><div class="h-full bg-green-500 transition-all duration-300" style="width:${progress}%"></div></div>
-                    <span class="text-sm font-bold text-slate-400">Q ${studyContext.step+1}/${questions.length}</span>
+            <div class="max-w-5xl mx-auto h-full flex flex-col pt-4 pb-48 animate-pop">
+                <div class="w-full flex items-center justify-between mb-12 bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl">
+                    <div class="flex-1 h-4 bg-slate-950 rounded-full mr-8 overflow-hidden border border-slate-800 shadow-inner"><div class="h-full bg-emerald-500 transition-all duration-500 shadow-[0_0_15px_rgba(16,185,129,0.8)]" style="width:${progress}%"></div></div>
+                    <span class="text-sm font-black text-slate-500 uppercase tracking-widest bg-slate-950 px-5 py-2.5 rounded-xl border border-slate-800 shadow-inner">Q ${studyContext.step+1} / ${questions.length}</span>
                 </div>
-                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-800 leading-tight">${q.text}</h2>
-                ${q.img ? `<img src="${q.img}" class="max-h-48 object-contain my-5 rounded-xl shadow-sm border border-slate-200">` : ''}
+                <h2 class="text-4xl sm:text-5xl font-extrabold text-white leading-tight tracking-tight">${q.text}</h2>
+                ${q.img ? `<img src="${q.img}" class="max-h-96 object-contain my-12 rounded-3xl shadow-2xl border border-slate-700 bg-slate-950 p-3">` : ''}
                 ${optionsHtml}
             </div>
             ${footerHtml}
@@ -920,11 +954,19 @@ window.app = {
     },
     checkQuizAnswer() {
         studyContext.isChecked = true;
+        const timeSpentMs = Date.now() - studyContext.qStart;
+        studyContext.timeSpent.push(timeSpentMs);
+
         const q = this.findSet(activeSubtopicId, activeSetId).questions[studyContext.step];
         if(this.evalQuizAnswer(q, studyContext.answers[studyContext.step])) studyContext.score++;
         this.renderQuizPlayer(document.getElementById('view-container'));
     },
-    nextQuizQuestion() { studyContext.isChecked = false; studyContext.step++; this.renderQuizPlayer(document.getElementById('view-container')); },
+    nextQuizQuestion() { 
+        studyContext.isChecked = false; 
+        studyContext.step++; 
+        studyContext.qStart = Date.now(); 
+        this.renderQuizPlayer(document.getElementById('view-container')); 
+    },
     
     finishSession() {
         let xpGained = 10; 
@@ -941,7 +983,9 @@ window.app = {
                 total: totalQ,
                 acc: accuracy,
                 date: new Date().toLocaleDateString(),
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                answers: JSON.parse(JSON.stringify(studyContext.answers)),
+                timeSpent: JSON.parse(JSON.stringify(studyContext.timeSpent))
             });
             xpGained += studyContext.score * 15;
         } else {
@@ -953,27 +997,28 @@ window.app = {
 
         const container = document.getElementById('view-container');
         container.innerHTML = `
-            <div class="max-w-md mx-auto text-center py-16 animate-pop">
-                <div class="relative w-40 h-40 mx-auto mb-8">
-                    <div class="absolute inset-0 bg-yellow-400 rounded-full blur-xl opacity-40 animate-pulse"></div>
-                    <div class="relative bg-gradient-to-tr from-yellow-400 to-orange-400 w-full h-full rounded-full flex items-center justify-center border-4 border-white shadow-xl">
-                        <i class="ph-fill ph-trophy text-white text-7xl"></i>
+            <div class="max-w-2xl mx-auto text-center py-24 animate-pop">
+                <div class="relative w-64 h-64 mx-auto mb-14">
+                    <div class="absolute inset-0 bg-yellow-500 rounded-full blur-[60px] opacity-20 animate-pulse"></div>
+                    <div class="relative bg-gradient-to-tr from-yellow-500 to-amber-600 w-full h-full rounded-full flex items-center justify-center border-[10px] border-slate-950 shadow-[0_0_50px_rgba(245,158,11,0.3)]">
+                        <i class="ph-fill ph-trophy text-white text-[120px] drop-shadow-lg"></i>
                     </div>
                 </div>
-                <h2 class="text-4xl font-extrabold text-slate-800 mb-2">Great Job!</h2>
-                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm mb-8 mt-6 flex items-center justify-center gap-4">
-                    <i class="ph-fill ph-lightning text-yellow-500 text-4xl animate-bounce"></i>
-                    <div class="text-left">
-                        <p class="text-sm font-bold text-slate-400 uppercase">XP Earned</p>
-                        <p class="text-3xl font-black text-yellow-500">+${xpGained}</p>
+                <h2 class="text-6xl font-black text-white mb-8 tracking-tighter">Great Job!</h2>
+                <div class="bg-slate-900 p-10 rounded-[3rem] border border-slate-800 shadow-2xl mb-14 mt-8 flex items-center justify-center gap-8 relative overflow-hidden">
+                    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-yellow-500/10 via-transparent to-transparent"></div>
+                    <i class="ph-fill ph-lightning text-yellow-400 text-[80px] animate-bounce drop-shadow-[0_0_30px_rgba(250,204,21,0.6)] relative z-10"></i>
+                    <div class="text-left relative z-10">
+                        <p class="text-sm font-black text-slate-500 uppercase tracking-widest mb-1">XP Earned</p>
+                        <p class="text-6xl font-black text-yellow-400 drop-shadow-md">+${xpGained}</p>
                     </div>
                 </div>
-                <button onclick="app.goBack()" class="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-2xl shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 text-xl">Continue</button>
+                <button onclick="app.goBack()" class="w-full py-6 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-[2rem] shadow-[0_8px_0_0_#1e3a8a] active:translate-y-2 text-2xl uppercase tracking-widest transition-all">Continue</button>
             </div>
         `;
     },
 
-    // Analytics & Historical Charts
+    // --- Analytics & Detailed Historical Review ---
     getSubjectStats(subjectId) {
         const subj = data.subjects.find(s => s.id === subjectId);
         if (!subj) return null;
@@ -1030,42 +1075,54 @@ window.app = {
         this.renderAnalytics(document.getElementById('view-container'));
     },
 
+    updateChartInfo(text) {
+        const panel = document.getElementById('chart-hover-info');
+        if (panel) panel.textContent = text;
+    },
+
     _buildChartHtml(title, subtitle, historyItems) {
         if (historyItems.length === 0) {
-            this.showModal(`Performance Graph`, `<div class="text-center py-10 text-slate-500 font-medium border-2 border-dashed border-slate-200 rounded-2xl">No attempts recorded yet.</div>`);
+            this.showModal(`Performance Graph`, `<div class="text-center py-16 text-slate-500 font-bold border-2 border-dashed border-slate-800 rounded-3xl bg-slate-900/50 text-lg uppercase tracking-widest">No attempts recorded yet.</div>`);
             return;
         }
 
         let bars = historyItems.map((h, i) => {
-            let color = h.acc < 60 ? 'bg-red-400' : (h.acc < 80 ? 'bg-yellow-400' : 'bg-green-400');
+            let color = h.acc < 60 ? 'bg-red-500' : (h.acc < 80 ? 'bg-yellow-500' : 'bg-emerald-500');
+            let targetSetId = h.setId || historyItems.setId; 
+            let origIdx = h.origIndex !== undefined ? h.origIndex : i;
+
             return `
-                <div class="flex flex-col items-center justify-end h-full group relative min-w-[32px] flex-1 max-w-[48px]">
-                    <div class="absolute bottom-full mb-2 bg-slate-800 text-white text-[10px] px-2 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none shadow-lg chart-tooltip text-center leading-tight">
-                        <span class="font-bold text-slate-300">Attempt ${i+1}</span><br>
-                        ${h.setName ? `<span class="text-xs text-blue-300">${h.setName}</span><br>` : ''}
-                        <span class="text-sm font-black">${h.acc}%</span><br>
-                        <span class="text-slate-400">${h.correct} / ${h.total} correct</span><br>
-                        <span class="text-slate-400">${h.date}</span>
-                    </div>
-                    <div class="w-full ${color} rounded-t-md transition-all shadow-sm relative overflow-hidden" style="height: ${Math.max(h.acc, 2)}%;">
+                <div
+                    data-chart-index="${i}"
+                    data-set-id="${targetSetId}"
+                    data-attempt-index="${origIdx}"
+                    role="button"
+                    tabindex="0"
+                    class="flex flex-col items-center justify-end h-full group relative min-w-[48px] flex-1 max-w-[80px] cursor-pointer hover:-translate-y-2 transition-transform"
+                >
+                    <div class="w-full ${color} rounded-t-xl transition-all shadow-[0_0_15px_rgba(0,0,0,0.5)] relative overflow-hidden group-hover:brightness-125" style="height: ${Math.max(h.acc, 2)}%;">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
                         <div class="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     </div>
-                    <span class="text-[10px] font-bold text-slate-400 mt-2 truncate w-full text-center">#${i+1}</span>
+                    <span class="text-[10px] font-black text-slate-600 mt-4 truncate w-full text-center group-hover:text-white transition-colors">#${i+1}</span>
                 </div>
             `;
         }).join('');
 
         let html = `
-            <div class="px-2 pt-24">
-                <div class="flex justify-between items-center mb-8">
-                    <div>
-                        <h4 class="text-xl font-bold text-slate-800">${title}</h4>
-                        <p class="text-sm font-medium text-slate-500 mt-1">${subtitle}</p>
-                    </div>
+            <div class="px-2 pt-6 pb-6">
+                <div class="mb-10 text-center">
+                    <h4 class="text-4xl font-black text-white tracking-tight">${title}</h4>
+                    <p class="text-xs font-bold text-slate-500 mt-3 uppercase tracking-widest">${subtitle}</p>
+                </div>
+
+                <!-- Static Info Panel -->
+                <div id="chart-hover-info" class="mb-10 p-5 bg-slate-950 border border-slate-800 rounded-2xl text-center text-sm text-slate-400 font-bold shadow-inner flex items-center justify-center min-h-[72px] transition-all tracking-wide">
+                    Hover over a bar to view summary, or <span class="text-blue-400 font-black ml-1">CLICK TO REVIEW</span>.
                 </div>
                 
-                <div class="relative w-full h-[280px] flex">
-                    <div class="flex flex-col justify-between text-[10px] font-bold text-slate-400 pr-3 pb-6 border-r border-slate-200 text-right w-12 shrink-0">
+                <div class="relative w-full h-[360px] flex bg-slate-900 p-8 rounded-[2rem] border border-slate-800 shadow-2xl">
+                    <div class="flex flex-col justify-between text-[10px] font-black text-slate-600 pr-6 pb-10 border-r-2 border-slate-800 text-right w-16 shrink-0 tracking-widest">
                         <span>100%</span>
                         <span>75%</span>
                         <span>50%</span>
@@ -1073,32 +1130,87 @@ window.app = {
                         <span>0%</span>
                     </div>
                     
-                    <div class="flex-1 overflow-x-auto hide-scrollbar pb-2 relative">
-                        <div class="absolute inset-0 flex flex-col justify-between pb-6 pointer-events-none z-0">
-                            <div class="w-full border-b border-slate-100 border-dashed h-0"></div>
-                            <div class="w-full border-b border-slate-100 border-dashed h-0"></div>
-                            <div class="w-full border-b border-slate-100 border-dashed h-0"></div>
-                            <div class="w-full border-b border-slate-100 border-dashed h-0"></div>
-                            <div class="w-full border-b border-slate-200 h-0"></div>
+                    <div class="flex-1 overflow-x-auto hide-scrollbar pb-2 pl-6 relative">
+                        <!-- Background Grid Lines -->
+                        <div class="absolute inset-0 pl-6 flex flex-col justify-between pb-10 pointer-events-none z-0">
+                            <div class="w-full border-b border-slate-800 border-dashed h-0"></div>
+                            <div class="w-full border-b border-slate-800 border-dashed h-0"></div>
+                            <div class="w-full border-b border-slate-800 border-dashed h-0"></div>
+                            <div class="w-full border-b border-slate-800 border-dashed h-0"></div>
+                            <div class="w-full border-b-2 border-slate-700 h-0"></div>
                         </div>
                         
-                        <div class="flex items-end h-full pb-6 px-4 gap-2 z-10 relative min-w-max">
+                        <!-- Chart Bars -->
+                        <div class="flex items-end h-full pb-10 px-4 gap-4 z-10 relative min-w-max">
                             ${bars}
                         </div>
                     </div>
                 </div>
-                <div class="text-center mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-t border-slate-100 pt-3">
+                <div class="text-center mt-8 text-[10px] font-black text-slate-600 uppercase tracking-widest">
                     <i class="ph-bold ph-arrows-left-right text-sm align-middle mr-1"></i> Scroll horizontally if needed
                 </div>
             </div>
         `;
         this.showModal(`Performance Graph`, html);
+
+        // Bind chart interactions after rendering instead of embedding JavaScript
+        // and nested HTML quotes inside inline event-handler attributes.
+        const infoPanel = document.getElementById('chart-hover-info');
+        const chartBars = document.querySelectorAll('#modal-content [data-chart-index]');
+
+        const showDefaultInfo = () => {
+            if (!infoPanel) return;
+            infoPanel.replaceChildren();
+            infoPanel.append('Hover over a bar to view summary, or ');
+            const hint = document.createElement('span');
+            hint.className = 'text-blue-400 font-black ml-1';
+            hint.textContent = 'CLICK TO REVIEW';
+            infoPanel.append(hint, '.');
+        };
+
+        chartBars.forEach(bar => {
+            const index = Number(bar.dataset.chartIndex);
+            const item = historyItems[index];
+
+            bar.addEventListener('mouseenter', () => {
+                if (!infoPanel || !item) return;
+                infoPanel.replaceChildren();
+                infoPanel.append(`Attempt ${index + 1}: `);
+
+                const accuracy = document.createElement('span');
+                accuracy.className = 'text-white font-black text-xl mx-2';
+                accuracy.textContent = `${item.acc}%`;
+
+                const result = document.createElement('span');
+                result.className = 'text-slate-400';
+                result.textContent = `(${item.correct}/${item.total})`;
+
+                const date = document.createElement('span');
+                date.className = 'text-slate-600 ml-3 uppercase text-[10px] tracking-widest';
+                date.textContent = `on ${item.date}`;
+
+                infoPanel.append(accuracy, ' ', result, ' ', date);
+            });
+
+            bar.addEventListener('mouseleave', showDefaultInfo);
+            bar.addEventListener('click', () => {
+                this.showAttemptReview(bar.dataset.setId, Number(bar.dataset.attemptIndex));
+            });
+            bar.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    this.showAttemptReview(bar.dataset.setId, Number(bar.dataset.attemptIndex));
+                }
+            });
+        });
     },
 
     showHistoryChart(setId, setName) {
         const set = this.findSetByIdAnywhere(setId);
         if (!set) return;
-        this._buildChartHtml(setName, "Accuracy over time", set.history || []);
+        let items = set.history || [];
+        items.setId = setId; 
+        this._buildChartHtml(setName, "Accuracy over time", items);
     },
 
     showTopicHistoryChart(topicId, topicName) {
@@ -1109,10 +1221,12 @@ window.app = {
         topic.subtopics.forEach(st => {
             st.questionSets.forEach(set => {
                 if(set.history) {
-                    set.history.forEach(h => {
+                    set.history.forEach((h, idx) => {
                         allAttempts.push({
                             ...h,
-                            setName: set.name
+                            setName: set.name,
+                            setId: set.id,        
+                            origIndex: idx        
                         });
                     });
                 }
@@ -1120,12 +1234,124 @@ window.app = {
         });
 
         allAttempts.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-        this._buildChartHtml(topicName, "Overall topic timeline", allAttempts);
+        this._buildChartHtml(topicName, "Overall Topic Timeline", allAttempts);
+    },
+
+    formatTime(ms) {
+        if (!ms) return "0s";
+        const seconds = Math.floor(ms / 1000);
+        if (seconds < 60) return `${seconds}s`;
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}m ${s}s`;
+    },
+
+    // --- Detailed Attempt Review Engine ---
+    showAttemptReview(setId, attemptIndex) {
+        const set = this.findSetByIdAnywhere(setId);
+        if(!set || !set.history || !set.history[attemptIndex]) return;
+        const attempt = set.history[attemptIndex];
+        
+        let totalTimeMs = 0;
+        if (attempt.timeSpent && attempt.timeSpent.length > 0) {
+            totalTimeMs = attempt.timeSpent.reduce((a, b) => a + b, 0);
+        }
+
+        let html = `
+            <div class="px-2 py-6">
+                <div class="mb-10 flex justify-between items-end border-b-2 border-slate-800 pb-8">
+                    <div>
+                        <h2 class="text-4xl font-black text-white mb-3 tracking-tight">Attempt Review</h2>
+                        <p class="text-xs font-black text-slate-500 uppercase tracking-widest">${set.name} <span class="mx-2">&bull;</span> <span class="text-slate-400">${attempt.date}</span></p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-5xl font-black ${attempt.acc >= 80 ? 'text-emerald-400' : (attempt.acc >= 60 ? 'text-yellow-400' : 'text-red-400')} drop-shadow-md tracking-tighter">${attempt.acc}%</div>
+                        <div class="text-[10px] font-black text-slate-600 uppercase mt-2 tracking-widest">Final Score</div>
+                    </div>
+                </div>
+                
+                <div class="flex gap-6 mb-12 bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-xl">
+                    <div class="flex-1">
+                        <div class="text-[10px] text-slate-500 font-black mb-2 uppercase tracking-widest">Correct Answers</div>
+                        <div class="text-3xl font-black text-white">${attempt.correct} <span class="text-slate-600 text-xl">/ ${attempt.total}</span></div>
+                    </div>
+                    <div class="w-0.5 bg-slate-800"></div>
+                    <div class="flex-1">
+                        <div class="text-[10px] text-slate-500 font-black mb-2 uppercase tracking-widest">Total Time Taken</div>
+                        <div class="text-3xl font-black text-blue-400 flex items-center gap-3"><i class="ph-bold ph-clock"></i> ${this.formatTime(totalTimeMs)}</div>
+                    </div>
+                </div>
+
+                <div class="space-y-10">
+        `;
+
+        set.questions.forEach((q, idx) => {
+            const userAns = attempt.answers ? attempt.answers[idx] : null;
+            const timeTaken = attempt.timeSpent ? attempt.timeSpent[idx] : null;
+            const isCorrect = this.evalQuizAnswer(q, userAns);
+
+            let statusColor = isCorrect ? 'border-emerald-500/50 bg-emerald-900/10 shadow-[0_0_20px_rgba(16,185,129,0.05)]' : 'border-red-500/50 bg-red-900/10 shadow-[0_0_20px_rgba(239,68,68,0.05)]';
+            let iconHtml = isCorrect ? '<i class="ph-fill ph-check-circle text-emerald-400 text-3xl drop-shadow-md"></i>' : '<i class="ph-fill ph-x-circle text-red-400 text-3xl drop-shadow-md"></i>';
+
+            let optionsHtml = '';
+            if (q.type === 'num') {
+                optionsHtml = `
+                    <div class="mt-6 bg-slate-950 p-6 rounded-2xl border border-slate-800 shadow-inner">
+                        <div class="mb-3"><span class="text-slate-600 font-black uppercase tracking-widest text-[10px] mr-4">Your Answer:</span> <span class="font-mono text-white text-xl font-bold">${userAns !== null && userAns !== undefined ? userAns : '-'}</span></div>
+                        ${!isCorrect ? `<div><span class="text-slate-600 font-black uppercase tracking-widest text-[10px] mr-4">Correct:</span> <span class="font-mono text-emerald-400 font-black text-xl">${q.correct}</span></div>` : ''}
+                    </div>
+                `;
+            } else {
+                optionsHtml = `<div class="mt-6 space-y-4">`;
+                q.options.forEach((opt, optIdx) => {
+                    const isCorrectOpt = q.type === 'mcq' ? q.correct === optIdx : q.correct.includes(optIdx);
+                    const isSel = userAns ? (q.type === 'mcq' ? userAns === optIdx : userAns.includes(optIdx)) : false;
+                    
+                    let optStyle = "border-slate-800 bg-slate-950 text-slate-500";
+                    let optIcon = "";
+                    if (isCorrectOpt && isSel) { optStyle = "border-emerald-500/50 bg-emerald-900/20 text-emerald-400 shadow-inner"; optIcon = `<i class="ph-bold ph-check-circle text-emerald-400 text-2xl"></i>`; }
+                    else if (isCorrectOpt && !isSel) { optStyle = "border-emerald-500/50 border-dashed bg-transparent text-emerald-500/60"; optIcon = `<i class="ph-bold ph-check text-emerald-500/60 text-xl"></i>`; }
+                    else if (!isCorrectOpt && isSel) { optStyle = "border-red-500/50 bg-red-900/20 text-red-400 shadow-inner"; optIcon = `<i class="ph-bold ph-x-circle text-red-400 text-2xl"></i>`; }
+                    
+                    optionsHtml += `<div class="p-5 rounded-xl border-2 ${optStyle} text-base font-bold flex justify-between items-center transition-colors"><span>${opt}</span>${optIcon}</div>`;
+                });
+                optionsHtml += `</div>`;
+            }
+
+            html += `
+                <div class="p-8 sm:p-10 rounded-[2rem] border-2 ${statusColor} relative">
+                    <div class="flex justify-between items-start mb-6 border-b border-slate-800 pb-5">
+                        <div class="flex items-center gap-4">
+                            ${iconHtml}
+                            <span class="text-xs font-black text-slate-400 uppercase tracking-widest">Question ${idx + 1}</span>
+                        </div>
+                        ${timeTaken ? `<span class="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-950 px-4 py-2 rounded-xl border border-slate-800 flex items-center gap-2 shadow-inner"><i class="ph-bold ph-clock text-sm"></i> ${this.formatTime(timeTaken)}</span>` : ''}
+                    </div>
+                    ${q.img ? `<img src="${q.img}" class="max-h-64 object-contain mt-4 mb-8 rounded-2xl border border-slate-800 bg-slate-950 p-3 shadow-inner w-full">` : ''}
+                    <p class="font-black text-white text-xl sm:text-2xl leading-snug tracking-tight">${q.text}</p>
+                    ${optionsHtml}
+                </div>
+            `;
+        });
+
+        html += `
+                </div>
+                <div class="mt-12">
+                    <button onclick="app.showHistoryChart('${setId}', '${set.name.replace(/'/g, "\\'")}')" class="w-full py-6 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-700 transition-all shadow-[0_6px_0_0_#0f172a] active:translate-y-1.5 border border-slate-700 uppercase tracking-widest text-xl flex justify-center items-center gap-3"><i class="ph-bold ph-arrow-left text-2xl"></i> Back to Chart</button>
+                </div>
+            </div>
+        `;
+
+        this.showModal("Attempt Details", html);
     },
 
     renderAnalytics(container) {
         if (data.subjects.length === 0) {
-            container.innerHTML = `<div class="max-w-5xl mx-auto text-center py-12"><p class="text-slate-500 font-medium">No subjects available for analytics.</p></div>`;
+            container.innerHTML = `
+                <div class="max-w-5xl mx-auto text-center py-20 bg-slate-900 rounded-[2rem] border border-slate-800 shadow-xl">
+                    <p class="text-slate-500 font-bold text-lg uppercase tracking-widest">No subjects available for analytics.</p>
+                </div>
+            `;
             return;
         }
 
@@ -1135,95 +1361,98 @@ window.app = {
 
         const stats = this.getSubjectStats(activeAnalyticsSubjectId);
 
-        let tabsHtml = `<div class="flex gap-3 overflow-x-auto pb-2 mb-8 hide-scrollbar">`;
+        let tabsHtml = `<div class="flex gap-4 overflow-x-auto pb-4 mb-10 hide-scrollbar">`;
         data.subjects.forEach(s => {
             const isActive = s.id === activeAnalyticsSubjectId;
-            tabsHtml += `<button onclick="app.setAnalyticsSubject('${s.id}')" class="px-5 py-2.5 rounded-xl font-bold whitespace-nowrap transition-all ${isActive ? s.color + ' text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-100 border border-slate-200'}">${s.name}</button>`;
+            tabsHtml += `<button onclick="app.setAnalyticsSubject('${s.id}')" class="px-8 py-4 rounded-2xl font-black whitespace-nowrap transition-all uppercase tracking-widest text-sm ${isActive ? (s.color||'bg-blue-600') + ' text-white shadow-lg border border-transparent scale-[1.02]' : 'bg-slate-900 text-slate-500 hover:bg-slate-800 border border-slate-800 hover:text-white'}">${s.name}</button>`;
         });
         tabsHtml += `</div>`;
 
         let html = `
-            <div class="max-w-5xl mx-auto space-y-6 animate-pop">
-                <div class="mb-2">
-                    <h2 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Subject Analytics</h2>
-                    <h1 class="text-3xl font-extrabold text-slate-800">Performance</h1>
+            <div class="max-w-5xl mx-auto space-y-10 animate-pop">
+                <div class="mb-6">
+                    <h2 class="text-sm font-black text-slate-600 uppercase tracking-widest mb-2">Subject Analytics</h2>
+                    <h1 class="text-5xl font-black text-white tracking-tight">Performance Tracker</h1>
                 </div>
 
                 ${tabsHtml}
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
-                        <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mb-2"><i class="ph-bold ph-arrows-clockwise text-2xl"></i></div>
-                        <p class="text-xs font-bold text-slate-400 uppercase">Subject Revisions</p>
-                        <p class="text-2xl font-black text-slate-700">${stats.rev}</p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-slate-900 p-8 rounded-[2rem] border border-slate-800 shadow-xl flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-blue-500/50 transition-colors">
+                        <div class="absolute inset-0 bg-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <div class="w-20 h-20 bg-blue-500/10 rounded-[1.5rem] flex items-center justify-center text-blue-400 mb-6 border border-blue-500/20 shadow-inner"><i class="ph-bold ph-arrows-clockwise text-4xl"></i></div>
+                        <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Subject Revisions</p>
+                        <p class="text-5xl font-black text-white tracking-tighter">${stats.rev}</p>
                     </div>
-                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
-                        <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 mb-2"><i class="ph-bold ph-check-square-offset text-2xl"></i></div>
-                        <p class="text-xs font-bold text-slate-400 uppercase">Qs Solved Here</p>
-                        <p class="text-2xl font-black text-slate-700">${stats.total}</p>
+                    <div class="bg-slate-900 p-8 rounded-[2rem] border border-slate-800 shadow-xl flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-purple-500/50 transition-colors">
+                        <div class="absolute inset-0 bg-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <div class="w-20 h-20 bg-purple-500/10 rounded-[1.5rem] flex items-center justify-center text-purple-400 mb-6 border border-purple-500/20 shadow-inner"><i class="ph-bold ph-check-square-offset text-4xl"></i></div>
+                        <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Qs Solved Here</p>
+                        <p class="text-5xl font-black text-white tracking-tighter">${stats.total}</p>
                     </div>
-                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
-                        <div class="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600 mb-2"><i class="ph-fill ph-lightning text-2xl"></i></div>
-                        <p class="text-xs font-bold text-slate-400 uppercase">Total App XP</p>
-                        <p class="text-2xl font-black text-yellow-600">${data.xp}</p>
+                    <div class="bg-slate-900 p-8 rounded-[2rem] border border-slate-800 shadow-xl flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-yellow-500/50 transition-colors">
+                        <div class="absolute inset-0 bg-yellow-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <div class="w-20 h-20 bg-yellow-500/10 rounded-[1.5rem] flex items-center justify-center text-yellow-400 mb-6 border border-yellow-500/20 shadow-inner"><i class="ph-fill ph-lightning text-4xl drop-shadow-sm"></i></div>
+                        <p class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Total App XP</p>
+                        <p class="text-5xl font-black text-yellow-400 drop-shadow-md tracking-tighter">${data.xp}</p>
                     </div>
                 </div>
 
-                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-6">
-                    <div class="${stats.color} p-4 text-white flex justify-between items-center">
-                        <h4 class="font-extrabold text-lg">${stats.name} Topics</h4>
+                <div class="bg-slate-900 rounded-[2rem] border border-slate-800 shadow-2xl overflow-hidden mt-10">
+                    <div class="p-8 border-b border-slate-800 flex justify-between items-center bg-slate-900 shadow-sm">
+                        <h4 class="font-black text-2xl text-white tracking-wide uppercase">${stats.name} Topics</h4>
                     </div>
-                    <div class="p-0 sm:p-2">
+                    <div class="p-5 sm:p-8 bg-slate-950 space-y-6">
         `;
 
-        if (stats.topStats.length === 0) html += `<p class="text-slate-400 text-center py-8">No topics yet.</p>`;
+        if (stats.topStats.length === 0) html += `<p class="text-slate-600 text-center py-12 font-black uppercase tracking-widest text-sm border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/50">No topics yet.</p>`;
 
         stats.topStats.forEach(topic => {
             html += `
-                <div class="m-2 sm:m-4 rounded-xl border border-slate-200 shadow-sm bg-slate-50/50 overflow-hidden">
-                    <div class="bg-slate-100 px-4 py-3 flex justify-between items-center border-b border-slate-200">
-                        <h5 class="font-bold text-slate-700"><i class="ph-bold ph-folder text-slate-400 mr-2"></i>${topic.name}</h5>
-                        <button onclick="app.showTopicHistoryChart('${topic.id}', '${topic.name.replace(/'/g, "\\'")}')" class="px-3 py-1.5 bg-white text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm">
-                            <i class="ph-bold ph-chart-bar text-sm"></i> Topic History
+                <div class="rounded-2xl border border-slate-800 shadow-lg bg-slate-900 overflow-hidden">
+                    <div class="bg-slate-800/80 px-6 sm:px-8 py-5 flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-700/50 gap-4">
+                        <h5 class="font-extrabold text-white text-lg flex items-center tracking-tight"><i class="ph-bold ph-folder text-blue-500 mr-4 text-2xl"></i>${topic.name}</h5>
+                        <button onclick="app.showTopicHistoryChart('${topic.id}', '${topic.name.replace(/'/g, "\\'")}')" class="px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 tracking-widest uppercase border border-blue-500">
+                            <i class="ph-bold ph-chart-bar text-lg"></i> Topic History
                         </button>
                     </div>
-                    <div class="divide-y divide-slate-200 flex flex-col">
+                    <div class="divide-y divide-slate-800/50 flex flex-col p-3">
             `;
             
-            if(topic.subStats.length === 0) html += `<p class="text-slate-400 text-center py-4 text-sm">No subtopics available.</p>`;
+            if(topic.subStats.length === 0) html += `<p class="text-slate-600 text-center py-8 text-xs font-black uppercase tracking-widest">No subtopics available.</p>`;
 
             topic.subStats.forEach(subtopic => {
-                html += `<div class="p-4 bg-white hover:bg-slate-50 transition-colors">`;
+                html += `<div class="p-5 rounded-xl hover:bg-slate-800/50 transition-colors">`;
                 html += `
-                    <div class="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
-                        <div class="flex items-center gap-2">
-                            <i class="ph-fill ph-file-text text-blue-500"></i>
-                            <span class="font-bold text-slate-700">${subtopic.name}</span>
+                    <div class="flex items-center justify-between mb-5 pb-4 border-b border-slate-800/50">
+                        <div class="flex items-center gap-3">
+                            <i class="ph-fill ph-file-text text-slate-600 text-xl"></i>
+                            <span class="font-black text-slate-200 text-lg">${subtopic.name}</span>
                         </div>
-                        <div class="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">FC Revisions: ${subtopic.fcRevs}x</div>
+                        <div class="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-lg shadow-inner">FC Revisions: <span class="text-blue-400 ml-1.5">${subtopic.fcRevs}x</span></div>
                     </div>
                 `;
                 
                 if (subtopic.setStats.length === 0) {
-                    html += `<p class="text-slate-400 text-xs italic pl-6">No question sets attached.</p>`;
+                    html += `<p class="text-slate-600 text-[10px] uppercase font-black tracking-widest pl-10">No question sets attached.</p>`;
                 } else {
                     subtopic.setStats.forEach(set => {
                         let historyHtml = "";
                         if (!set.history || set.history.length === 0) {
-                            historyHtml = `<span class="text-slate-400 text-xs font-medium bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">No Attempts</span>`;
+                            historyHtml = `<span class="text-slate-600 text-[10px] font-black uppercase tracking-widest bg-slate-950 px-4 py-2 rounded-lg border border-slate-800 shadow-inner">No Attempts</span>`;
                         } else {
                             historyHtml = `
-                                <button onclick="app.showHistoryChart('${set.id}', '${set.name.replace(/'/g, "\\'")}')" class="px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm">
+                                <button onclick="app.showHistoryChart('${set.id}', '${set.name.replace(/'/g, "\\'")}')" class="px-5 py-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-slate-950 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-sm">
                                     <i class="ph-bold ph-chart-bar text-sm"></i> View History
                                 </button>
                             `;
                         }
 
                         html += `
-                            <div class="pl-6 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-l-2 border-slate-100 ml-2 mb-2">
-                                <div class="flex items-center gap-2">
-                                    <i class="ph-bold ph-stack text-slate-400"></i>
-                                    <span class="font-semibold text-slate-600 text-sm">${set.name}</span>
+                            <div class="pl-10 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-l-2 border-slate-800 ml-4 mb-2">
+                                <div class="flex items-center gap-3">
+                                    <i class="ph-bold ph-stack text-slate-600 text-lg"></i>
+                                    <span class="font-bold text-slate-400 text-base">${set.name}</span>
                                 </div>
                                 <div>${historyHtml}</div>
                             </div>
