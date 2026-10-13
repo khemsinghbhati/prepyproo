@@ -1,5 +1,8 @@
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const colors = ['bg-blue-600', 'bg-purple-600', 'bg-emerald-600', 'bg-rose-600', 'bg-amber-600'];
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[char]));
 
 const defaultData = { subjects: [], xp: 0 };
 let data = JSON.parse(localStorage.getItem('prepProData_v12')) || JSON.parse(JSON.stringify(defaultData));
@@ -593,10 +596,17 @@ window.app = {
         st.flashcards.forEach((fc, idx) => {
             html += `
                 <div class="p-6 rounded-2xl border border-slate-800 bg-slate-900 relative group shadow-lg hover:border-slate-600 transition-colors">
-                    <button onclick="app.deleteItem('fc', ${idx})" class="absolute top-4 right-4 text-slate-600 hover:text-red-400 p-2 hidden group-hover:block bg-slate-950 rounded-lg shadow-sm border border-slate-800 transition-colors"><i class="ph-bold ph-trash text-lg"></i></button>
-                    <p class="font-extrabold text-base text-white mb-4 pb-4 border-b border-slate-800 leading-relaxed"><span class="text-slate-500 mr-2 uppercase text-xs tracking-widest">Q:</span>${fc.front}</p>
-                    ${fc.img ? `<img src="${fc.img}" class="max-h-48 object-contain my-4 rounded-xl border border-slate-700 bg-slate-950 p-2 w-full shadow-inner">` : ''}
-                    ${fc.back ? `<p class="text-sm text-slate-300 line-clamp-4 font-bold leading-relaxed"><span class="text-slate-600 mr-2 uppercase text-xs tracking-widest">A:</span>${fc.back}</p>` : ''}
+                    <div class="flex items-start gap-3 mb-4 pb-4 border-b border-slate-800">
+                        <p class="font-extrabold text-base text-white leading-relaxed flex-1"><span class="text-slate-500 mr-2 uppercase text-xs tracking-widest">Q:</span>${escapeHtml(fc.front)}</p>
+                        <div class="flex items-center gap-1 shrink-0">
+                            <button onclick="app.editFlashcard(${idx})" class="text-slate-500 hover:text-blue-400 p-2 bg-slate-950 rounded-lg border border-slate-800 transition-colors" title="Edit flashcard" aria-label="Edit flashcard"><i class="ph-bold ph-pencil-simple text-lg"></i></button>
+                            <button onclick="app.moveFlashcard(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} class="text-slate-500 hover:text-blue-400 p-2 bg-slate-950 rounded-lg border border-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="Move up" aria-label="Move flashcard up"><i class="ph-bold ph-arrow-up text-lg"></i></button>
+                            <button onclick="app.moveFlashcard(${idx}, 1)" ${idx === st.flashcards.length - 1 ? 'disabled' : ''} class="text-slate-500 hover:text-blue-400 p-2 bg-slate-950 rounded-lg border border-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="Move down" aria-label="Move flashcard down"><i class="ph-bold ph-arrow-down text-lg"></i></button>
+                            <button onclick="app.deleteItem('fc', ${idx})" class="text-slate-600 hover:text-red-400 p-2 bg-slate-950 rounded-lg shadow-sm border border-slate-800 transition-colors" title="Delete flashcard" aria-label="Delete flashcard"><i class="ph-bold ph-trash text-lg"></i></button>
+                        </div>
+                    </div>
+                    ${fc.img ? `<img src="${escapeHtml(fc.img)}" class="max-h-48 object-contain my-4 rounded-xl border border-slate-700 bg-slate-950 p-2 w-full shadow-inner">` : ''}
+                    ${fc.back ? `<p class="text-sm text-slate-300 line-clamp-4 font-bold leading-relaxed"><span class="text-slate-600 mr-2 uppercase text-xs tracking-widest">A:</span>${escapeHtml(fc.back)}</p>` : ''}
                 </div>
             `;
         });
@@ -701,15 +711,19 @@ window.app = {
     },
 
     // Modals for Flashcards & Questions
-    showFlashcardForm() {
-        app.tempImageUrl = '';
+    showFlashcardForm(index = null) {
+        const stData = this.findSubtopic(activeSubtopicId);
+        if (!stData) return;
+        const existing = index === null ? null : stData.subtopic.flashcards[index];
+        if (index !== null && !existing) return;
+        app.tempImageUrl = existing?.img || '';
         const html = `
             <div class="space-y-6">
                 <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Front (Question)</label>
-                <textarea id="fc-front" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-bold text-lg shadow-inner"></textarea></div>
+                <textarea id="fc-front" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-bold text-lg shadow-inner">${escapeHtml(existing?.front || '')}</textarea></div>
                 
                 <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Back (Answer) <span class="text-slate-600">- Optional if image</span></label>
-                <textarea id="fc-back" rows="3" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-medium shadow-inner placeholder-slate-700" placeholder="Type answer details here..."></textarea></div>
+                <textarea id="fc-back" rows="3" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-medium shadow-inner placeholder-slate-700" placeholder="Type answer details here...">${escapeHtml(existing?.back || '')}</textarea></div>
                 
                 <div class="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
                     <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Image Attachment</label>
@@ -717,23 +731,46 @@ window.app = {
                     
                     <div class="flex items-center gap-4 mb-4"><div class="h-px bg-slate-800 flex-1"></div><span class="text-[10px] text-slate-600 font-black uppercase tracking-widest">OR PASTE URL</span><div class="h-px bg-slate-800 flex-1"></div></div>
                     
-                    <input type="text" id="img-url-input" placeholder="https://..." oninput="app.handleImageUrl(this.value)" class="w-full px-5 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-white focus:border-blue-500 outline-none font-mono text-sm shadow-inner">
-                    <div id="img-preview"></div>
+                    <input type="text" id="img-url-input" value="${escapeHtml(existing?.img || '')}" placeholder="https://..." oninput="app.handleImageUrl(this.value)" class="w-full px-5 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-white focus:border-blue-500 outline-none font-mono text-sm shadow-inner">
+                    <div id="img-preview">${existing?.img ? `<img src="${escapeHtml(existing.img)}" class="max-h-40 object-contain rounded-xl shadow-lg border border-slate-700 mt-4 bg-slate-950 p-2">` : ''}</div>
                 </div>
 
-                <button onclick="app.saveFlashcard()" class="w-full py-4 bg-blue-600 text-white font-black tracking-widest uppercase text-sm rounded-xl hover:bg-blue-500 transition shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 mt-6 border border-blue-500">Save Flashcard</button>
+                <button onclick="app.saveFlashcard(${index === null ? 'null' : index})" class="w-full py-4 bg-blue-600 text-white font-black tracking-widest uppercase text-sm rounded-xl hover:bg-blue-500 transition shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 mt-6 border border-blue-500">${existing ? 'Update Flashcard' : 'Save Flashcard'}</button>
             </div>
         `;
-        this.showModal("New Flashcard", html);
+        this.showModal(existing ? "Edit Flashcard" : "New Flashcard", html);
     },
-    saveFlashcard() {
+    editFlashcard(index) {
+        this.showFlashcardForm(index);
+    },
+    moveFlashcard(index, direction) {
+        const stData = this.findSubtopic(activeSubtopicId);
+        if (!stData) return;
+        const cards = stData.subtopic.flashcards;
+        const target = index + direction;
+        if (index < 0 || index >= cards.length || target < 0 || target >= cards.length) return;
+        [cards[index], cards[target]] = [cards[target], cards[index]];
+        this.save();
+        this.setView('subtopic-editor');
+        this.showToast(direction < 0 ? "Flashcard moved up." : "Flashcard moved down.", "success");
+    },
+    saveFlashcard(index = null) {
         const front = document.getElementById('fc-front').value.trim();
         const back = document.getElementById('fc-back').value.trim();
         if(!front) return alert("Front text is required.");
         if(!back && !app.tempImageUrl) return alert("Please provide either Back text or an Image.");
         
         const stData = this.findSubtopic(activeSubtopicId);
-        stData.subtopic.flashcards.push({ id: generateId(), front, back, img: app.tempImageUrl });
+        if (!stData) return;
+        if (index === null) {
+            stData.subtopic.flashcards.push({ id: generateId(), front, back, img: app.tempImageUrl });
+        } else {
+            const card = stData.subtopic.flashcards[index];
+            if (!card) return;
+            card.front = front;
+            card.back = back;
+            card.img = app.tempImageUrl;
+        }
         app.tempImageUrl = '';
         this.save(); this.closeModal(); this.setView('subtopic-editor');
     },
@@ -860,13 +897,13 @@ window.app = {
                         <!-- Front -->
                         <div class="absolute inset-0 backface-hidden bg-slate-900 border-2 border-slate-800 rounded-[3rem] p-8 sm:p-14 flex flex-col items-center justify-center text-center shadow-2xl">
                             <span class="absolute top-10 left-1/2 transform -translate-x-1/2 text-[10px] font-black text-blue-400 bg-blue-500/10 px-5 py-2.5 rounded-xl uppercase tracking-widest border border-blue-500/20">Tap to flip</span>
-                            <h3 class="text-4xl sm:text-6xl font-black text-white leading-tight tracking-tight">${card.front}</h3>
+                            <h3 class="text-4xl sm:text-6xl font-black text-white leading-tight tracking-tight">${escapeHtml(card.front)}</h3>
                         </div>
 
                         <!-- Back -->
                         <div class="absolute inset-0 backface-hidden rotate-y-180 bg-slate-900 border-2 border-blue-500/30 rounded-[3rem] p-8 sm:p-14 flex flex-col items-center justify-center text-center overflow-hidden shadow-[0_0_50px_rgba(59,130,246,0.15)]">
-                            ${card.img ? `<div class="flex-1 w-full min-h-0 flex items-center justify-center mb-8"><img src="${card.img}" class="max-w-full max-h-[400px] object-contain rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-3"></div>` : ''}
-                            ${card.back ? `<div class="shrink-0 overflow-y-auto max-h-1/2 w-full"><p class="text-2xl sm:text-4xl font-extrabold text-blue-100 whitespace-pre-line leading-relaxed">${card.back}</p></div>` : ''}
+                            ${card.img ? `<div class="flex-1 w-full min-h-0 flex items-center justify-center mb-8"><img src="${escapeHtml(card.img)}" class="max-w-full max-h-[400px] object-contain rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-3"></div>` : ''}
+                            ${card.back ? `<div class="shrink-0 overflow-y-auto max-h-1/2 w-full"><p class="text-2xl sm:text-4xl font-extrabold text-blue-100 whitespace-pre-line leading-relaxed">${escapeHtml(card.back)}</p></div>` : ''}
                         </div>
                     </div>
                 </div>
