@@ -1,5 +1,3 @@
-# prepyproo
-A flashcard and quiz platform
 # 🎓 PrepPro - Gamified Learning & Quiz Platform
 
 ![HTML5](https://img.shields.io/badge/html5-%23E34F26.svg?style=for-the-badge&logo=html5&logoColor=white)
@@ -55,7 +53,7 @@ Click the **Analytics** tab in the sidebar to view your performance.
 * Click **View History** on any question set to see a dynamic graph of your past attempts, accuracy percentages, and timestamps.
 
 # License
-© 2026 Khem Singh. All Rights Reserved.
+© 2026 Khem Singh \& Avneel Singh. All Rights Reserved.
 
 This repository and its contents are not open-source. You may view the code for educational and portfolio evaluation purposes, but you may not copy, modify, distribute, or use it for commercial purposes without explicit permission.
 
