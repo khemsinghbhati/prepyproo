@@ -562,7 +562,8 @@ window.app = {
 
     async handleImageUpload(event) {
         const file = event.clipboardData
-            ? Array.from(event.clipboardData.items || []).find(item => item.type.startsWith('image/'))?.getAsFile()
+            ? (Array.from(event.clipboardData.items || []).find(item => item.type.startsWith('image/'))?.getAsFile()
+                || Array.from(event.clipboardData.files || []).find(item => item.type.startsWith('image/')))
             : event.target?.files?.[0];
         if (!file) return;
         if (event.clipboardData) event.preventDefault();
@@ -1981,7 +1982,9 @@ window.app = {
 
 document.addEventListener('paste', (event) => {
     const hasImage = Array.from(event.clipboardData?.items || [])
-        .some(item => item.type.startsWith('image/'));
+        .some(item => item.type.startsWith('image/'))
+        || Array.from(event.clipboardData?.files || [])
+            .some(file => file.type.startsWith('image/'));
     if (!hasImage) return;
 
     const modal = document.getElementById('modal-container');
