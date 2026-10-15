@@ -31,7 +31,8 @@ let studyContext = { type: null, step: 0, score: 0, answers: {}, isFlipped: fals
 
 window.app = {
     tempImageUrl: '',
-    
+    sessionCompletionTimer: null,
+
     init() {
         data = this.normalizeData(data);
         this.updateUI();
@@ -560,12 +561,15 @@ window.app = {
     },
 
     async handleImageUpload(event) {
-        const file = event.target.files[0];
+        const file = event.clipboardData
+            ? Array.from(event.clipboardData.items || []).find(item => item.type.startsWith('image/'))?.getAsFile()
+            : event.target?.files?.[0];
         if (!file) return;
+        if (event.clipboardData) event.preventDefault();
         
         if (file.size > 10 * 1024 * 1024) {
             alert("Image too large! Maximum file size is 10MB.");
-            event.target.value = '';
+            if (event.target?.type === 'file') event.target.value = '';
             return;
         }
 
@@ -1012,7 +1016,7 @@ window.app = {
                     </div>
                     
                     ${this.safeImageURL(q.img) ? `<img src="${this.safeImageURL(q.img)}" alt="Question illustration" loading="lazy" class="max-h-64 object-contain mb-6 rounded-2xl border border-slate-700 bg-slate-950 p-2 w-full shadow-inner">` : ''}
-                    <p class="font-black text-white mb-6 text-xl sm:text-2xl leading-snug tracking-tight">${this.escapeHTML(q.text)}</p>
+                    ${q.text ? `<p class="font-black text-white mb-6 text-xl sm:text-2xl leading-snug tracking-tight">${this.escapeHTML(q.text)}</p>` : ''}
                     
                     <div class="text-sm font-bold text-slate-300 bg-slate-950 p-6 rounded-2xl border border-slate-800 shadow-inner">
                         ${q.type === 'num' ? `<span class="font-black text-slate-600 uppercase mr-3 tracking-widest text-[10px]">Answer:</span> <span class="text-emerald-400 text-xl font-black">${this.escapeHTML(q.correct)}</span>` : `<span class="font-black text-slate-600 uppercase mr-3 tracking-widest text-[10px] block mb-3">Options:</span> <ul class="list-disc pl-5 space-y-2">${q.options.map((o, i) => {
@@ -1032,7 +1036,7 @@ window.app = {
         editingFlashcardId = card ? card.id : null;
         app.tempImageUrl = card?.img || '';
         const html = `
-            <div class="space-y-6">
+            <div class="space-y-6" onpaste="app.handleImageUpload(event)">
                 <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Front (Question)</label>
                 <textarea id="fc-front" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-bold text-lg shadow-inner">${this.escapeHTML(card?.front || '')}</textarea></div>
                 <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Back (Answer) <span class="text-slate-600">- Optional if image</span></label>
@@ -1087,7 +1091,7 @@ window.app = {
         editingQuestionId = question ? question.id : null;
         app.tempImageUrl = question?.img || '';
         const html = `
-            <div class="space-y-6">
+            <div class="space-y-6" onpaste="app.handleImageUpload(event)">
                 <div>
                     <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Question Type</label>
                     <select id="q-type" onchange="app.renderQuestionFields()" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white outline-none font-bold shadow-inner appearance-none cursor-pointer tracking-wide">
@@ -1160,7 +1164,7 @@ window.app = {
     saveQuestion() {
         const type = document.getElementById('q-type').value;
         const text = document.getElementById('q-text').value.trim();
-        if(!text) return alert("Question text is required.");
+        if (!text && !app.tempImageUrl) return alert("Provide question text or an image.");
 
         let qObj = { id: editingQuestionId || generateId(), type, text, img: app.tempImageUrl };
         
@@ -1315,7 +1319,7 @@ window.app = {
                     <div class="flex-1 h-3 bg-slate-950 rounded-full mr-4 overflow-hidden border border-slate-800 shadow-inner"><div class="h-full bg-emerald-500 transition-all duration-500 shadow-[0_0_15px_rgba(16,185,129,0.8)]" style="width:${progress}%"></div></div>
                     <span class="text-xs font-black text-slate-500 uppercase tracking-widest bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 shadow-inner whitespace-nowrap">Q ${studyContext.step+1} / ${questions.length}</span>
                 </div>
-                <h2 class="shrink-0 text-2xl sm:text-3xl font-extrabold text-white leading-snug tracking-tight">${this.escapeHTML(q.text)}</h2>
+                ${q.text ? `<h2 class="shrink-0 text-2xl sm:text-3xl font-extrabold text-white leading-snug tracking-tight">${this.escapeHTML(q.text)}</h2>` : ''}
                 ${this.safeImageURL(q.img) ? `<img src="${this.safeImageURL(q.img)}" alt="Question illustration" loading="lazy" class="shrink-0 max-w-full max-h-64 sm:max-h-80 object-contain mx-auto my-6 rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-2" style="max-height:min(32vh, 320px);">` : ''}
                 ${optionsHtml}
                 ${footerHtml}
@@ -1389,7 +1393,15 @@ window.app = {
         this.renderQuizPlayer(document.getElementById('view-container'));
     },
     
+    continueAfterSession() {
+        if (this.sessionCompletionTimer) clearTimeout(this.sessionCompletionTimer);
+        this.sessionCompletionTimer = null;
+        this.goBack();
+    },
+
     finishSession() {
+        if (this.sessionCompletionTimer) clearTimeout(this.sessionCompletionTimer);
+        this.sessionCompletionTimer = null;
         let xpGained = 10; 
         const stData = this.findSubtopic(activeSubtopicId);
         
@@ -1422,7 +1434,7 @@ window.app = {
 
         const container = document.getElementById('view-container');
         container.innerHTML = `
-            <div class="max-w-2xl mx-auto text-center py-24 animate-pop">
+            <div id="session-completion-screen" class="max-w-2xl mx-auto text-center py-24 animate-pop">
                 <div class="relative w-64 h-64 mx-auto mb-14">
                     <div class="absolute inset-0 bg-yellow-500 rounded-full blur-[60px] opacity-20 animate-pulse"></div>
                     <div class="relative bg-gradient-to-tr from-yellow-500 to-amber-600 w-full h-full rounded-full flex items-center justify-center border-[10px] border-slate-950 shadow-[0_0_50px_rgba(245,158,11,0.3)]">
@@ -1438,9 +1450,12 @@ window.app = {
                         <p class="text-6xl font-black text-yellow-400 drop-shadow-md">+${xpGained}</p>
                     </div>
                 </div>
-                <button onclick="app.goBack()" class="w-full py-6 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-[2rem] shadow-[0_8px_0_0_#1e3a8a] active:translate-y-2 text-2xl uppercase tracking-widest transition-all">Continue</button>
+                <button onclick="app.continueAfterSession()" class="w-full py-6 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-[2rem] shadow-[0_8px_0_0_#1e3a8a] active:translate-y-2 text-2xl uppercase tracking-widest transition-all">Continue</button>
             </div>
         `;
+        this.sessionCompletionTimer = setTimeout(() => {
+            if (document.getElementById('session-completion-screen')) this.continueAfterSession();
+        }, 1800);
     },
 
     // --- Analytics & Detailed Historical Review ---
