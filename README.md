@@ -89,3 +89,5 @@ PrepPro is a serverless, single-page learning app that helps students organize s
 © 2026 Khem Singh & Avneel Singh. All rights reserved.
 
 This repository and its contents are not open-source. You may view the code for educational and portfolio evaluation purposes, but you may not copy, modify, distribute, or use it for commercial purposes without explicit permission.
+
+**Project Contributors:** [Avneel Singh](https://github.com/avneelsingh) | [Khem Singh](https://github.com/khemsinghbhati)
