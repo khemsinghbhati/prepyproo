@@ -31,7 +31,8 @@ let studyContext = { type: null, step: 0, score: 0, answers: {}, isFlipped: fals
 
 window.app = {
     tempImageUrl: '',
-    
+    imageUploadInProgress: false,
+
     init() {
         data = this.normalizeData(data);
         this.updateUI();
@@ -221,7 +222,8 @@ window.app = {
         }
 
         const container = document.getElementById('view-container');
-        container.innerHTML = ''; 
+        container.innerHTML = '';
+        container.scrollTop = 0;
         
         if (view === 'dashboard') this.renderDashboard(container);
         else if (view === 'analytics') this.renderAnalytics(container);
@@ -254,6 +256,14 @@ window.app = {
         `;
         container.classList.remove('hidden', 'opacity-0');
         content.classList.remove('scale-95');
+        const pasteTarget = content.querySelector('#q-text, #fc-front');
+        if (pasteTarget) {
+            requestAnimationFrame(() => {
+                if (!container.classList.contains('hidden') && pasteTarget.isConnected) {
+                    pasteTarget.focus({ preventScroll: true });
+                }
+            });
+        }
     },
     closeModal() { 
         const container = document.getElementById('modal-container');
@@ -296,6 +306,23 @@ window.app = {
     },
 
     // Hierarchy Finders
+    isStudySessionActive() {
+        return ['fc-viewer', 'quiz-player'].includes(currentView) ||
+            !!document.getElementById('session-completion-screen');
+    },
+
+    canRefreshFromCloud() {
+        const modal = document.getElementById('modal-container');
+        return ['dashboard', 'analytics'].includes(currentView) &&
+            (!modal || modal.classList.contains('hidden')) &&
+            !this.isStudySessionActive();
+    },
+
+    refreshCurrentView() {
+        this.updateUI();
+        this.setView(currentView, true);
+    },
+
     findSubtopic(id) {
         for (let s of data.subjects) {
             for (let t of s.topics) {
@@ -560,15 +587,20 @@ window.app = {
     },
 
     async handleImageUpload(event) {
-        const file = event.target.files[0];
+        const file = event.clipboardData
+            ? (Array.from(event.clipboardData.items || []).find(item => item.type.startsWith('image/'))?.getAsFile()
+                || Array.from(event.clipboardData.files || []).find(item => item.type.startsWith('image/')))
+            : event.target?.files?.[0];
         if (!file) return;
+        if (event.clipboardData) event.preventDefault();
         
         if (file.size > 10 * 1024 * 1024) {
             alert("Image too large! Maximum file size is 10MB.");
-            event.target.value = '';
+            if (event.target?.type === 'file') event.target.value = '';
             return;
         }
 
+        this.imageUploadInProgress = true;
         const preview = document.getElementById('img-preview');
         if (preview) preview.innerHTML = `<p class="text-sm text-blue-400 font-bold mt-4 animate-pulse flex items-center"><i class="ph-bold ph-spinner animate-spin text-xl mr-2"></i>Uploading securely...</p>`;
 
@@ -602,6 +634,8 @@ window.app = {
             console.error(err);
             app.showToast("Upload failed: " + err.message, "error");
             if (preview) preview.innerHTML = `<p class="text-sm text-red-400 font-bold mt-3 border border-red-500/30 bg-red-500/10 p-2 rounded-lg">Upload failed.</p>`;
+        } finally {
+            this.imageUploadInProgress = false;
         }
     },
 
@@ -1012,7 +1046,7 @@ window.app = {
                     </div>
                     
                     ${this.safeImageURL(q.img) ? `<img src="${this.safeImageURL(q.img)}" alt="Question illustration" loading="lazy" class="max-h-64 object-contain mb-6 rounded-2xl border border-slate-700 bg-slate-950 p-2 w-full shadow-inner">` : ''}
-                    <p class="font-black text-white mb-6 text-xl sm:text-2xl leading-snug tracking-tight">${this.escapeHTML(q.text)}</p>
+                    ${q.text ? `<p class="font-black text-white mb-6 text-xl sm:text-2xl leading-snug tracking-tight">${this.escapeHTML(q.text)}</p>` : ''}
                     
                     <div class="text-sm font-bold text-slate-300 bg-slate-950 p-6 rounded-2xl border border-slate-800 shadow-inner">
                         ${q.type === 'num' ? `<span class="font-black text-slate-600 uppercase mr-3 tracking-widest text-[10px]">Answer:</span> <span class="text-emerald-400 text-xl font-black">${this.escapeHTML(q.correct)}</span>` : `<span class="font-black text-slate-600 uppercase mr-3 tracking-widest text-[10px] block mb-3">Options:</span> <ul class="list-disc pl-5 space-y-2">${q.options.map((o, i) => {
@@ -1038,7 +1072,7 @@ window.app = {
                 <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Back (Answer) <span class="text-slate-600">- Optional if image</span></label>
                 <textarea id="fc-back" rows="3" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-medium shadow-inner placeholder-slate-700" placeholder="Type answer details here...">${this.escapeHTML(card?.back || '')}</textarea></div>
                 <div class="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
-                    <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Image Attachment</label>
+                    <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Attach / Ctrl+V</label>
                     <input type="file" accept="image/*" onchange="app.handleImageUpload(event)" class="w-full text-sm text-slate-400 file:mr-4 file:py-3 file:px-5 file:rounded-xl file:border-0 file:text-xs file:font-black file:tracking-widest file:uppercase file:bg-blue-600 file:text-white hover:file:bg-blue-500 transition-all cursor-pointer mb-5">
                     <div class="flex items-center gap-4 mb-4"><div class="h-px bg-slate-800 flex-1"></div><span class="text-[10px] text-slate-600 font-black uppercase tracking-widest">OR PASTE URL</span><div class="h-px bg-slate-800 flex-1"></div></div>
                     <input type="text" id="img-url-input" value="${this.escapeHTML(card?.img || '')}" placeholder="https://..." oninput="app.handleImageUrl(this.value)" class="w-full px-5 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-white focus:border-blue-500 outline-none font-mono text-sm shadow-inner">
@@ -1067,6 +1101,7 @@ window.app = {
     saveFlashcard() {
         const front = document.getElementById('fc-front').value.trim();
         const back = document.getElementById('fc-back').value.trim();
+        if (app.imageUploadInProgress) return this.showToast("Please wait for the image upload to finish.", "error");
         if (!front) return alert("Front text is required.");
         if (!back && !app.tempImageUrl) return alert("Please provide either Back text or an Image.");
         const stData = this.findSubtopic(activeSubtopicId);
@@ -1097,12 +1132,12 @@ window.app = {
                     </select>
                 </div>
                 <div>
-                    <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Question Text</label>
+                    <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Question Text <span class="text-slate-600">- Optional if image attached</span></label>
                     <textarea id="q-text" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none font-bold text-lg shadow-inner">${this.escapeHTML(question?.text || '')}</textarea>
                 </div>
                 
                 <div class="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
-                    <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Image Attachment</label>
+                    <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Attach / Ctrl+V</label>
                     <input type="file" accept="image/*" onchange="app.handleImageUpload(event)" class="w-full text-sm text-slate-400 file:mr-4 file:py-3 file:px-5 file:rounded-xl file:border-0 file:text-xs file:font-black file:tracking-widest file:uppercase file:bg-blue-600 file:text-white hover:file:bg-blue-500 transition-all cursor-pointer mb-5">
                     
                     <div class="flex items-center gap-4 mb-4"><div class="h-px bg-slate-800 flex-1"></div><span class="text-[10px] text-slate-600 font-black uppercase tracking-widest">OR PASTE URL</span><div class="h-px bg-slate-800 flex-1"></div></div>
@@ -1160,9 +1195,12 @@ window.app = {
     saveQuestion() {
         const type = document.getElementById('q-type').value;
         const text = document.getElementById('q-text').value.trim();
-        if(!text) return alert("Question text is required.");
+        if (app.imageUploadInProgress) return this.showToast("Please wait for the image upload to finish.", "error");
+        const previewImage = document.querySelector('#img-preview img');
+        const imageUrl = this.safeImageURL(app.tempImageUrl || previewImage?.getAttribute('src') || '');
+        if (!text && !imageUrl) return alert("Attach an image or enter question text.");
 
-        let qObj = { id: editingQuestionId || generateId(), type, text, img: app.tempImageUrl };
+        let qObj = { id: editingQuestionId || generateId(), type, text, img: imageUrl };
         
         if (type === 'num') {
             const ans = document.getElementById('q-num-ans').value;
@@ -1249,8 +1287,8 @@ window.app = {
                         </div>
 
                         <!-- Back -->
-                        <div class="absolute inset-0 backface-hidden rotate-y-180 bg-slate-900 border-2 border-blue-500/30 rounded-[3rem] p-8 sm:p-14 flex flex-col items-center justify-center text-center overflow-hidden shadow-[0_0_50px_rgba(59,130,246,0.15)]">
-                            ${this.safeImageURL(card.img) ? `<div class="flex-1 w-full min-h-0 flex items-center justify-center mb-8"><img src="${this.safeImageURL(card.img)}" alt="Flashcard attachment" loading="lazy" class="max-w-full max-h-[400px] object-contain rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-3"></div>` : ''}
+                        <div class="absolute inset-0 backface-hidden rotate-y-180 bg-slate-900 border-2 border-blue-500/30 rounded-[3rem] p-5 sm:p-8 flex flex-col items-center justify-start text-center overflow-y-auto overflow-x-hidden shadow-[0_0_50px_rgba(59,130,246,0.15)]">
+                            ${this.safeImageURL(card.img) ? `<div class="w-full flex flex-col items-center mb-6" onclick="event.stopPropagation()"><img src="${this.safeImageURL(card.img)}" alt="Flashcard attachment" loading="lazy" class="block w-auto h-auto max-w-full object-contain rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-2 sm:p-3"></div>` : ''}
                             ${card.back ? `<div class="shrink-0 overflow-y-auto max-h-1/2 w-full"><p class="text-2xl sm:text-4xl font-extrabold text-blue-100 whitespace-pre-line leading-relaxed">${this.escapeHTML(card.back)}</p></div>` : ''}
                         </div>
                     </div>
@@ -1276,10 +1314,10 @@ window.app = {
         let optionsHtml = '';
         if (q.type === 'num') {
             let style = isChecked ? (studyContext.answers[studyContext.step] == q.correct ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-red-500 bg-red-500/10 text-red-400") : "border-slate-700 bg-slate-950 text-white focus:border-blue-500 shadow-inner";
-            let reveal = isChecked ? `<div class="mt-5 p-4 bg-slate-900 border border-slate-800 rounded-xl font-bold text-slate-400 text-sm sm:text-base tracking-wide uppercase shadow-inner text-center">Correct Answer: <span class="text-emerald-400 ml-2 text-lg sm:text-xl">${this.escapeHTML(q.correct)}</span></div>` : "";
-            optionsHtml = `<div class="mt-6"><input type="number" step="any" ${isChecked?'disabled':''} value="${this.escapeHTML(studyContext.answers[studyContext.step] || '')}" oninput="app.selectQuizAnswer(this.value)" class="w-full text-center text-2xl sm:text-3xl font-black py-5 sm:py-6 rounded-2xl border-2 ${style} outline-none shadow-xl transition-all shadow-inner">${reveal}</div>`;
+            let reveal = isChecked ? `<div class="mt-4 p-3 bg-slate-900 border border-slate-800 rounded-xl font-bold text-slate-400 text-sm tracking-wide uppercase shadow-inner text-center">Correct Answer: <span class="text-emerald-400 ml-2 text-base sm:text-lg">${this.escapeHTML(q.correct)}</span></div>` : "";
+            optionsHtml = `<div class="mt-4"><input type="number" step="any" ${isChecked?'disabled':''} value="${this.escapeHTML(studyContext.answers[studyContext.step] || '')}" oninput="app.selectQuizAnswer(this.value)" class="w-full text-center text-xl sm:text-2xl font-black py-3 sm:py-4 rounded-2xl border-2 ${style} outline-none shadow-xl transition-all shadow-inner">${reveal}</div>`;
         } else {
-            optionsHtml = `<div class="mt-6 space-y-3">`;
+            optionsHtml = `<div class="mt-4 space-y-2">`;
             const cur = studyContext.answers[studyContext.step] || (q.type === 'msq' ? [] : null);
             q.options.forEach((opt, idx) => {
                 let btnStyle = "border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300", icon = "";
@@ -1292,31 +1330,30 @@ window.app = {
                 } else {
                     if ((q.type === 'mcq' && cur === idx) || (q.type === 'msq' && cur.includes(idx))) btnStyle = "border-blue-500 bg-blue-600/20 text-blue-200 border-2 shadow-[0_0_20px_rgba(59,130,246,0.25)] scale-[1.02]";
                 }
-                optionsHtml += `<button type="button" ${isChecked?'':`onclick="app.selectQuizAnswer(${idx})"`} class="w-full text-left p-4 sm:p-5 rounded-2xl border-2 ${btnStyle} font-bold text-base sm:text-lg leading-snug flex items-center justify-between gap-4 transition-all"><span class="min-w-0 flex-1 break-words">${this.escapeHTML(opt)}</span>${icon}</button>`;
+                optionsHtml += `<button type="button" ${isChecked?'':`onclick="app.selectQuizAnswer(${idx})"`} class="w-full text-left p-3 sm:p-4 rounded-xl border-2 ${btnStyle} font-bold text-sm sm:text-base leading-snug flex items-center justify-between gap-3 transition-all"><span class="min-w-0 flex-1 break-words">${this.escapeHTML(opt)}</span>${icon}</button>`;
             });
             optionsHtml += `</div>`;
-            if(q.type==='msq') optionsHtml += `<p class="mt-4 text-center text-[10px] sm:text-xs font-black text-purple-400 bg-purple-500/10 py-2.5 rounded-xl border border-purple-500/20 uppercase tracking-widest shadow-sm">Select all that apply</p>`;
+            if(q.type==='msq') optionsHtml += `<p class="mt-3 text-center text-[10px] sm:text-xs font-black text-purple-400 bg-purple-500/10 py-2 rounded-xl border border-purple-500/20 uppercase tracking-widest shadow-sm">Select all that apply</p>`;
         }
 
         let footerHtml = "";
         if (isChecked) {
             const isCorrect = this.evalQuizAnswer(q, studyContext.answers[studyContext.step]);
-            const feedback = isCorrect ? `<div class="text-emerald-400 font-black text-lg sm:text-xl uppercase tracking-wider flex items-center gap-2"><i class="ph-fill ph-check-circle text-2xl"></i> Awesome!</div>` : `<div class="text-red-400 font-black text-lg sm:text-xl uppercase tracking-wider flex items-center gap-2"><i class="ph-fill ph-warning-circle text-2xl"></i> Review This.</div>`;
-            footerHtml = `<div class="mt-8 pt-5 pb-4 border-t border-slate-800"><div class="flex flex-col sm:flex-row gap-3 items-center justify-between">${feedback}<button type="button" onclick="app.nextQuizQuestion()" class="w-full sm:w-auto px-8 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl shadow-[0_4px_0_0_#065f46] active:translate-y-1 text-base sm:text-lg tracking-widest uppercase transition-all">Continue</button></div></div>`;
+            const feedback = isCorrect ? `<div class="text-emerald-400 font-black text-base sm:text-lg uppercase tracking-wider flex items-center gap-2"><i class="ph-fill ph-check-circle text-xl"></i> Awesome!</div>` : `<div class="text-red-400 font-black text-base sm:text-lg uppercase tracking-wider flex items-center gap-2"><i class="ph-fill ph-warning-circle text-xl"></i> Review This.</div>`;
+            footerHtml = `<div class="mt-5 pt-4 pb-3 border-t border-slate-800"><div class="flex flex-col sm:flex-row gap-3 items-center justify-between">${feedback}<button type="button" onclick="app.nextQuizQuestion()" class="w-full sm:w-auto px-8 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl shadow-[0_4px_0_0_#065f46] active:translate-y-1 text-base sm:text-lg tracking-widest uppercase transition-all">Continue</button></div></div>`;
         } else {
             const hasAns = (q.type!=='msq'&&q.type!=='num'&&studyContext.answers[studyContext.step]!=null) || (q.type==='msq'&&studyContext.answers[studyContext.step]?.length>0) || (q.type==='num'&&studyContext.answers[studyContext.step]);
-            footerHtml = `<div class="mt-8 pt-5 pb-4 border-t border-slate-800"><div class="flex justify-end"><button type="button" ${hasAns?'':'disabled'} onclick="app.checkQuizAnswer()" class="w-full sm:w-auto px-10 sm:px-12 py-3.5 ${hasAns?'bg-blue-600 text-white shadow-[0_4px_0_0_#1e3a8a] hover:bg-blue-500 border border-blue-400':'bg-slate-900 text-slate-700 shadow-[0_4px_0_0_#0f172a] cursor-not-allowed border border-slate-800'} font-black rounded-xl active:translate-y-1 transition-all text-base sm:text-lg uppercase tracking-widest">Check</button></div></div>`;
+            footerHtml = `<div class="mt-5 pt-4 pb-3 border-t border-slate-800"><div class="flex justify-end"><button type="button" ${hasAns?'':'disabled'} onclick="app.checkQuizAnswer()" class="w-full sm:w-auto px-10 sm:px-12 py-3.5 ${hasAns?'bg-blue-600 text-white shadow-[0_4px_0_0_#1e3a8a] hover:bg-blue-500 border border-blue-400':'bg-slate-900 text-slate-700 shadow-[0_4px_0_0_#0f172a] cursor-not-allowed border border-slate-800'} font-black rounded-xl active:translate-y-1 transition-all text-base sm:text-lg uppercase tracking-widest">Check</button></div></div>`;
         }
 
         container.innerHTML = `
-            <div class="quiz-question-scroll max-w-5xl mx-auto flex flex-col pt-3 pb-5 animate-pop"
-                 style="height:calc(100vh - 180px);height:calc(100dvh - 180px);max-height:calc(100vh - 180px);max-height:calc(100dvh - 180px);min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;">
-                <div class="w-full flex items-center justify-between mb-6 bg-slate-900 p-3 sm:p-4 rounded-xl border border-slate-800 shadow-lg shrink-0">
+            <div class="quiz-question-scroll max-w-5xl mx-auto flex flex-col pt-2 pb-4 animate-pop">
+                <div class="w-full flex items-center justify-between mb-4 bg-slate-900 p-2 sm:p-3 rounded-xl border border-slate-800 shadow-lg shrink-0">
                     <div class="flex-1 h-3 bg-slate-950 rounded-full mr-4 overflow-hidden border border-slate-800 shadow-inner"><div class="h-full bg-emerald-500 transition-all duration-500 shadow-[0_0_15px_rgba(16,185,129,0.8)]" style="width:${progress}%"></div></div>
                     <span class="text-xs font-black text-slate-500 uppercase tracking-widest bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 shadow-inner whitespace-nowrap">Q ${studyContext.step+1} / ${questions.length}</span>
                 </div>
-                <h2 class="shrink-0 text-2xl sm:text-3xl font-extrabold text-white leading-snug tracking-tight">${this.escapeHTML(q.text)}</h2>
-                ${this.safeImageURL(q.img) ? `<img src="${this.safeImageURL(q.img)}" alt="Question illustration" loading="lazy" class="shrink-0 max-w-full max-h-64 sm:max-h-80 object-contain mx-auto my-6 rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-2" style="max-height:min(32vh, 320px);">` : ''}
+                ${q.text ? `<h2 class="shrink-0 text-xl sm:text-2xl font-extrabold text-white leading-snug tracking-tight">${this.escapeHTML(q.text)}</h2>` : ''}
+                ${this.safeImageURL(q.img) ? `<img src="${this.safeImageURL(q.img)}" alt="Question illustration" loading="lazy" class="block w-auto h-auto max-w-full object-contain mx-auto my-5 rounded-xl shadow-xl border border-slate-700 bg-slate-950 p-2 sm:p-3">` : ''}
                 ${optionsHtml}
                 ${footerHtml}
                 <div class="h-2 shrink-0"></div>
@@ -1325,13 +1362,33 @@ window.app = {
     },
     selectQuizAnswer(val) {
         const q = this.findSet(activeSubtopicId, activeSetId).questions[studyContext.step];
-        if (q.type === 'mcq' || q.type === 'num') studyContext.answers[studyContext.step] = val;
+        if (q.type === 'num') {
+            studyContext.answers[studyContext.step] = val;
+            const checkButton = document.querySelector('#view-container button[onclick="app.checkQuizAnswer()"]');
+            if (checkButton) {
+                const hasAnswer = String(val ?? '').trim() !== '';
+                checkButton.disabled = !hasAnswer;
+                checkButton.className = `w-full sm:w-auto px-10 sm:px-12 py-3.5 font-black rounded-xl active:translate-y-1 transition-all text-base sm:text-lg uppercase tracking-widest ${hasAnswer
+                    ? 'bg-blue-600 text-white shadow-[0_4px_0_0_#1e3a8a] hover:bg-blue-500 border border-blue-400'
+                    : 'bg-slate-900 text-slate-700 shadow-[0_4px_0_0_#0f172a] cursor-not-allowed border border-slate-800'}`;
+            }
+            return;
+        }
+
+        if (q.type === 'mcq') studyContext.answers[studyContext.step] = val;
         else {
             let arr = studyContext.answers[studyContext.step] || [];
             if (arr.includes(val)) arr = arr.filter(x => x !== val); else arr.push(val);
             studyContext.answers[studyContext.step] = arr;
         }
-        this.renderQuizPlayer(document.getElementById('view-container'));
+
+        const container = document.getElementById('view-container');
+        const scrollTop = container?.scrollTop || 0;
+        document.activeElement?.blur();
+        this.renderQuizPlayer(container);
+        requestAnimationFrame(() => {
+            if (container) container.scrollTop = scrollTop;
+        });
     },
     evalQuizAnswer(q, ans) {
         if(ans == null || ans === '') return false;
@@ -1375,7 +1432,12 @@ window.app = {
         const q = set?.questions?.[studyContext.step];
         if (!q) return this.showToast('Question not found.', 'error');
         if (this.evalQuizAnswer(q, studyContext.answers[studyContext.step])) studyContext.score++;
-        this.renderQuizPlayer(document.getElementById('view-container'));
+        const container = document.getElementById('view-container');
+        const scrollTop = container?.scrollTop || 0;
+        this.renderQuizPlayer(container);
+        requestAnimationFrame(() => {
+            if (container) container.scrollTop = scrollTop;
+        });
     },
     nextQuizQuestion() {
         // The Continue button is only available after checking the current answer.
@@ -1386,7 +1448,11 @@ window.app = {
         studyContext.isChecked = false;
         studyContext.step++;
         studyContext.qStart = Date.now();
-        this.renderQuizPlayer(document.getElementById('view-container'));
+        const container = document.getElementById('view-container');
+        this.renderQuizPlayer(container);
+        requestAnimationFrame(() => {
+            if (container) container.scrollTop = 0;
+        });
     },
     
     finishSession() {
@@ -1422,7 +1488,7 @@ window.app = {
 
         const container = document.getElementById('view-container');
         container.innerHTML = `
-            <div class="max-w-2xl mx-auto text-center py-24 animate-pop">
+            <div id="session-completion-screen" class="max-w-2xl mx-auto text-center py-24 animate-pop">
                 <div class="relative w-64 h-64 mx-auto mb-14">
                     <div class="absolute inset-0 bg-yellow-500 rounded-full blur-[60px] opacity-20 animate-pulse"></div>
                     <div class="relative bg-gradient-to-tr from-yellow-500 to-amber-600 w-full h-full rounded-full flex items-center justify-center border-[10px] border-slate-950 shadow-[0_0_50px_rgba(245,158,11,0.3)]">
@@ -1968,3 +2034,17 @@ window.app = {
         container.innerHTML = html;
     }
 };
+
+document.addEventListener('paste', (event) => {
+    const hasImage = Array.from(event.clipboardData?.items || [])
+        .some(item => item.type.startsWith('image/'))
+        || Array.from(event.clipboardData?.files || [])
+            .some(file => file.type.startsWith('image/'));
+    if (!hasImage) return;
+
+    const modal = document.getElementById('modal-container');
+    if (!modal || modal.classList.contains('hidden') || !document.getElementById('img-preview')) return;
+
+    event.preventDefault();
+    window.app.handleImageUpload(event);
+});
