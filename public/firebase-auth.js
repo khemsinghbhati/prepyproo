@@ -20,6 +20,7 @@ const firebaseConfig = {
     storageBucket: "prepyproo.firebasestorage.app",
     messagingSenderId: "94747453911",
     appId: "1:94747453911:web:e2dbfd6b1fad2f126ec392",
+    measurementId: "G-N0R12V9Y2K"
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
