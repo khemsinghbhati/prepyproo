@@ -3,111 +3,364 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PrepPro - Pro Dashboard</title>
+
+    <meta
+        name="description"
+        content="PrepPro helps you organize learning paths, master flashcards, practice questions, and track your learning progress."
+    >
+    <meta name="theme-color" content="#020617">
+
+    <title>PrepPro</title>
+
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/jpeg" href="/favicon.jpg?v=4">
+    <link rel="shortcut icon" href="/favicon.jpg?v=4">
+
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet"
+    >
+
+    <!-- Phosphor Icons -->
+    <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/regular/style.css"
+    >
+    <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/fill/style.css"
+    >
+    <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/bold/style.css"
+    >
+
+    <!-- Custom Styles -->
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body class="h-screen w-full flex overflow-hidden bg-slate-950 text-slate-200 selection:bg-blue-500/30">
 
-    <div id="login-view" class="fixed inset-0 z-[200] bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+    <!-- ==================== LOGIN VIEW ==================== -->
+    <div
+        id="login-view"
+        class="fixed inset-0 z-[200] bg-slate-950 flex flex-col items-center justify-center p-6 text-center"
+    >
         <div class="max-w-md w-full bg-slate-900/80 backdrop-blur-xl rounded-[2rem] p-8 sm:p-10 shadow-2xl border border-slate-800 flex flex-col items-center animate-pop">
+
+            <!-- Logo -->
             <div class="w-20 h-20 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-3xl flex items-center justify-center mb-6 shadow-[0_0_40px_rgba(79,70,229,0.4)]">
-                <i class="ph-fill ph-student text-white text-4xl drop-shadow-md"></i>
+                <i class="ph-fill ph-student text-white text-4xl drop-shadow-md" aria-hidden="true"></i>
             </div>
-            <h1 class="text-4xl font-black text-white tracking-tight">PrepPro</h1>
+
+            <h1 class="text-4xl font-black text-white tracking-tight">
+                PrepPro
+            </h1>
+
             <p class="text-slate-400 text-sm mt-3 mb-10 font-medium leading-relaxed">
                 Organize learning paths, master flashcards, and track your accuracy history across custom question sets.
             </p>
-            <button onclick="loginWithGoogle()" class="w-full flex items-center justify-center gap-3 px-6 py-4 bg-slate-800 border border-slate-700 text-white font-extrabold rounded-2xl hover:bg-slate-700 hover:border-slate-600 transition-all shadow-lg active:scale-95 group">
-                <i class="ph-bold ph-google-logo text-blue-400 text-2xl group-hover:scale-110 transition-transform"></i>
+
+            <!-- Google Login -->
+            <button
+                type="button"
+                onclick="loginWithGoogle()"
+                class="w-full flex items-center justify-center gap-3 px-6 py-4 bg-slate-800 border border-slate-700 text-white font-extrabold rounded-2xl hover:bg-slate-700 hover:border-slate-600 transition-all shadow-lg active:scale-95 group"
+                aria-label="Continue with Google"
+            >
+                <i class="ph-bold ph-google-logo text-blue-400 text-2xl group-hover:scale-110 transition-transform" aria-hidden="true"></i>
                 <span class="tracking-wide">Continue with Google</span>
             </button>
-            <div id="auth-status" class="mt-5 text-xs font-bold text-slate-500 min-h-[1rem] uppercase tracking-widest"></div>
+
+            <!-- Authentication Status -->
+            <div
+                id="auth-status"
+                role="status"
+                aria-live="polite"
+                class="mt-5 text-xs font-bold text-slate-500 min-h-[1rem] uppercase tracking-widest"
+            ></div>
+
         </div>
     </div>
 
+
+    <!-- ==================== MAIN APPLICATION ==================== -->
     <div id="app-view" class="hidden h-screen w-full flex overflow-hidden">
-        <div id="mobile-overlay" class="fixed inset-0 bg-slate-950/80 z-40 hidden md:hidden transition-opacity" onclick="app.toggleSidebar(false)"></div>
-        
-        <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 transform -translate-x-full transition-transform duration-300 ease-in-out md:relative md:translate-x-0 flex flex-col shadow-2xl md:shadow-none">
+
+        <!-- Mobile Sidebar Overlay -->
+        <div
+            id="mobile-overlay"
+            class="fixed inset-0 bg-slate-950/80 z-40 hidden md:hidden transition-opacity"
+            onclick="app.toggleSidebar(false)"
+            aria-hidden="true"
+        ></div>
+
+
+        <!-- ==================== SIDEBAR ==================== -->
+        <aside
+            id="sidebar"
+            class="fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 transform -translate-x-full transition-transform duration-300 ease-in-out md:relative md:translate-x-0 flex flex-col shadow-2xl md:shadow-none"
+            aria-label="Main navigation"
+        >
+
+            <!-- Brand -->
             <div class="flex items-center justify-between p-6 border-b border-slate-800/50">
+
                 <h1 class="text-2xl font-black text-white flex items-center gap-3 tracking-wide">
-                    <div class="p-2.5 bg-blue-600/20 rounded-xl border border-blue-500/30"><i class="ph-fill ph-student text-blue-400 text-xl"></i></div>
+                    <div class="p-2.5 bg-blue-600/20 rounded-xl border border-blue-500/30">
+                        <i class="ph-fill ph-student text-blue-400 text-xl" aria-hidden="true"></i>
+                    </div>
                     PrepPro
                 </h1>
-                <button onclick="app.toggleSidebar(false)" class="md:hidden p-2 text-slate-500 hover:text-white rounded-lg transition-colors"><i class="ph-bold ph-x text-2xl"></i></button>
+
+                <!-- Close Sidebar on Mobile -->
+                <button
+                    type="button"
+                    onclick="app.toggleSidebar(false)"
+                    class="md:hidden p-2 text-slate-500 hover:text-white rounded-lg transition-colors"
+                    aria-label="Close navigation menu"
+                >
+                    <i class="ph-bold ph-x text-2xl" aria-hidden="true"></i>
+                </button>
+
             </div>
-            
-            <nav class="p-5 space-y-3 flex-1">
-                <button onclick="app.setView('dashboard')" id="nav-dashboard" class="nav-btn w-full flex items-center gap-4 px-5 py-4 rounded-2xl font-extrabold transition-all bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-inner text-sm tracking-wide uppercase">
-                    <i class="ph-fill ph-map-trifold text-xl"></i> Learning Path
+
+
+            <!-- Navigation -->
+            <nav class="p-5 space-y-3 flex-1" aria-label="Dashboard sections">
+
+                <!-- Learning Path -->
+                <button
+                    type="button"
+                    onclick="app.setView('dashboard')"
+                    id="nav-dashboard"
+                    aria-current="page"
+                    class="nav-btn w-full flex items-center gap-4 px-5 py-4 rounded-2xl font-extrabold transition-all bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-inner text-sm tracking-wide uppercase"
+                >
+                    <i class="ph-fill ph-map-trifold text-xl" aria-hidden="true"></i>
+                    Learning Path
                 </button>
-                <button onclick="app.setView('analytics')" id="nav-analytics" class="nav-btn w-full flex items-center gap-4 px-5 py-4 rounded-2xl font-bold transition-all text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border border-transparent text-sm tracking-wide uppercase">
-                    <i class="ph-fill ph-chart-line-up text-xl"></i> Analytics
+
+                <!-- Analytics -->
+                <button
+                    type="button"
+                    onclick="app.setView('analytics')"
+                    id="nav-analytics"
+                    class="nav-btn w-full flex items-center gap-4 px-5 py-4 rounded-2xl font-bold transition-all text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border border-transparent text-sm tracking-wide uppercase"
+                >
+                    <i class="ph-fill ph-chart-line-up text-xl" aria-hidden="true"></i>
+                    Analytics
                 </button>
+
             </nav>
 
-            <div id="user-auth-area" class="p-5 border-t border-slate-800/50 mt-auto min-h-[80px] flex items-center bg-slate-900"></div>
+
+            <!-- User Authentication Area -->
+            <div
+                id="user-auth-area"
+                class="p-5 border-t border-slate-800/50 mt-auto min-h-[80px] flex items-center bg-slate-900"
+            ></div>
+
+
+            <!-- Mode and Data Controls -->
             <div class="p-5 border-t border-slate-800 space-y-4 bg-slate-950/50">
+
+                <!-- Current Mode -->
                 <div class="flex items-center justify-between px-2 text-xs font-black text-slate-500 mb-3 uppercase tracking-widest">
                     <span>Mode</span>
-                    <span id="mode-badge" class="px-3 py-1 rounded-md bg-slate-800 text-slate-400 border border-slate-700">Learner</span>
+
+                    <span
+                        id="mode-badge"
+                        class="px-3 py-1 rounded-md bg-slate-800 text-slate-400 border border-slate-700"
+                    >
+                        Learner
+                    </span>
                 </div>
-                <button onclick="app.toggleMode()" id="mode-toggle-btn" class="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-slate-800 text-white font-extrabold rounded-xl hover:bg-slate-700 transition-all shadow-md active:scale-95 border border-slate-700 tracking-wide">
-                    <i class="ph-bold ph-pencil-simple text-lg"></i> Switch to Creator
+
+                <!-- Toggle Creator/Learner Mode -->
+                <button
+                    type="button"
+                    onclick="app.toggleMode()"
+                    id="mode-toggle-btn"
+                    class="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-slate-800 text-white font-extrabold rounded-xl hover:bg-slate-700 transition-all shadow-md active:scale-95 border border-slate-700 tracking-wide"
+                >
+                    <i class="ph-bold ph-pencil-simple text-lg" aria-hidden="true"></i>
+                    Switch to Creator
                 </button>
-                <button onclick="app.resetAllData()" class="w-full flex items-center justify-center gap-2 px-4 py-3 text-xs font-black text-red-500/70 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all tracking-widest uppercase">
-                    <i class="ph-bold ph-trash"></i> Reset Data
+
+                <!-- Reset Data -->
+                <button
+                    type="button"
+                    onclick="app.resetAllData()"
+                    class="w-full flex items-center justify-center gap-2 px-4 py-3 text-xs font-black text-red-500/70 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all tracking-widest uppercase"
+                >
+                    <i class="ph-bold ph-trash" aria-hidden="true"></i>
+                    Reset Data
                 </button>
+
             </div>
         </aside>
 
+
+        <!-- ==================== MAIN CONTENT ==================== -->
         <main class="flex-1 flex flex-col h-full overflow-hidden bg-slate-950 relative">
+
+            <!-- Header -->
             <header class="h-20 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800 flex items-center justify-between px-6 sm:px-10 sticky top-0 z-30 shrink-0 shadow-sm">
+
+                <!-- Header Left -->
                 <div class="flex items-center gap-4">
-                    <button onclick="app.toggleSidebar(true)" class="md:hidden p-2 text-slate-400 hover:text-white bg-slate-800/50 rounded-xl"><i class="ph-bold ph-list text-2xl"></i></button>
+
+                    <!-- Mobile Menu Button -->
+                    <button
+                        type="button"
+                        onclick="app.toggleSidebar(true)"
+                        class="md:hidden p-2 text-slate-400 hover:text-white bg-slate-800/50 rounded-xl"
+                        aria-label="Open navigation menu"
+                    >
+                        <i class="ph-bold ph-list text-2xl" aria-hidden="true"></i>
+                    </button>
+
+                    <!-- Back Button -->
                     <div id="back-btn-container" class="hidden">
-                        <button onclick="app.goBack()" class="flex items-center gap-2 px-4 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700 font-bold transition-all text-sm shadow-sm uppercase tracking-widest">
-                            <i class="ph-bold ph-arrow-left"></i> Back
+                        <button
+                            type="button"
+                            onclick="app.goBack()"
+                            class="flex items-center gap-2 px-4 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700 font-bold transition-all text-sm shadow-sm uppercase tracking-widest"
+                        >
+                            <i class="ph-bold ph-arrow-left" aria-hidden="true"></i>
+                            Back
                         </button>
                     </div>
-                    <h2 id="header-title" class="hidden sm:block font-black text-white ml-2 tracking-widest uppercase text-sm text-slate-400"></h2>
+
+                    <!-- Dynamic Page Title -->
+                    <h2
+                        id="header-title"
+                        class="hidden sm:block font-black text-white ml-2 tracking-widest uppercase text-sm text-slate-400"
+                    ></h2>
+
                 </div>
+
+
+                <!-- Header Right: XP -->
                 <div class="flex items-center gap-4">
-                    <div class="px-5 py-2 bg-slate-800 border border-yellow-500/30 text-yellow-400 rounded-xl font-black flex items-center gap-2 shadow-[0_0_20px_rgba(234,179,8,0.15)] text-sm tracking-widest">
-                        <i class="ph-fill ph-lightning text-xl"></i> <span id="header-xp">0 XP</span>
+
+                    <div
+                        class="px-5 py-2 bg-slate-800 border border-yellow-500/30 text-yellow-400 rounded-xl font-black flex items-center gap-2 shadow-[0_0_20px_rgba(234,179,8,0.15)] text-sm tracking-widest"
+                        aria-label="Experience points"
+                    >
+                        <i class="ph-fill ph-lightning text-xl" aria-hidden="true"></i>
+                        <span id="header-xp">0 XP</span>
                     </div>
+
                 </div>
             </header>
-            <div id="view-container" class="flex-1 overflow-y-auto w-full relative p-6 sm:p-10 pb-32"></div>
+
+
+            <!-- Dynamic View Container -->
+            <div
+                id="view-container"
+                class="flex-1 overflow-y-auto w-full relative p-6 sm:p-10 pb-32"
+            ></div>
+
         </main>
     </div>
 
-    <div id="modal-container" class="fixed inset-0 z-[100] hidden flex items-center justify-center modal-backdrop p-4 opacity-0 transition-opacity duration-300">
-        <div id="modal-content" class="bg-slate-900 rounded-[2rem] shadow-2xl border border-slate-700 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] scale-95 transition-transform duration-300"></div>
+
+    <!-- ==================== MODAL ==================== -->
+    <div
+        id="modal-container"
+        class="fixed inset-0 z-[100] hidden flex items-center justify-center modal-backdrop p-4 opacity-0 transition-opacity duration-300"
+    >
+        <div
+            id="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-title"
+            class="bg-slate-900 rounded-[2rem] shadow-2xl border border-slate-700 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] scale-95 transition-transform duration-300"
+        ></div>
     </div>
 
-    <div id="action-sheet" class="fixed inset-0 z-[90] hidden flex items-end sm:items-center justify-center modal-backdrop p-4 transition-opacity">
+
+    <!-- ==================== ACTION SHEET ==================== -->
+    <div
+        id="action-sheet"
+        class="fixed inset-0 z-[90] hidden flex items-end sm:items-center justify-center modal-backdrop p-4 transition-opacity"
+    >
+
         <div class="bg-slate-900 rounded-t-[2.5rem] sm:rounded-[2rem] shadow-2xl border border-slate-700 w-full max-w-md overflow-hidden animate-pop">
+
+            <!-- Action Sheet Header -->
             <div class="p-8 text-center border-b border-slate-800 bg-slate-900/90">
-                <h3 id="action-sheet-title" class="text-2xl font-black text-white tracking-tight">Subtopic</h3>
-                <p class="text-slate-400 text-xs mt-2 font-bold uppercase tracking-widest">Choose what to study</p>
+
+                <h3
+                    id="action-sheet-title"
+                    class="text-2xl font-black text-white tracking-tight"
+                >
+                    Subtopic
+                </h3>
+
+                <p class="text-slate-400 text-xs mt-2 font-bold uppercase tracking-widest">
+                    Choose what to study
+                </p>
+
             </div>
-            <div class="p-6 space-y-4 bg-slate-950" id="action-sheet-content"></div>
+
+
+            <!-- Dynamic Actions -->
+            <div
+                class="p-6 space-y-4 bg-slate-950"
+                id="action-sheet-content"
+            ></div>
+
+
+            <!-- Cancel -->
             <div class="p-5 bg-slate-900 border-t border-slate-800">
-                <button onclick="document.getElementById('action-sheet').classList.add('hidden')" class="w-full py-4 text-slate-400 font-black hover:text-white hover:bg-slate-800 rounded-xl transition-all border border-slate-700 uppercase tracking-widest text-xs">Cancel</button>
+
+                <button
+                    type="button"
+                    onclick="document.getElementById('action-sheet').classList.add('hidden')"
+                    class="w-full py-4 text-slate-400 font-black hover:text-white hover:bg-slate-800 rounded-xl transition-all border border-slate-700 uppercase tracking-widest text-xs"
+                >
+                    Cancel
+                </button>
+
             </div>
+
         </div>
     </div>
 
-    <div id="toast" class="fixed bottom-8 right-8 bg-slate-800 text-white px-6 py-4 rounded-2xl shadow-2xl border border-slate-600 transform transition-all duration-300 translate-y-20 opacity-0 pointer-events-none z-[300] font-bold flex items-center gap-3">
-        <div id="toast-icon"><i class="ph-fill ph-info text-blue-400 text-xl"></i></div>
-        <span id="toast-message" class="tracking-wide">Notification</span>
+
+    <!-- ==================== TOAST NOTIFICATIONS ==================== -->
+    <div
+        id="toast"
+        role="status"
+        aria-live="polite"
+        class="fixed bottom-8 right-8 bg-slate-800 text-white px-6 py-4 rounded-2xl shadow-2xl border border-slate-600 transform transition-all duration-300 translate-y-20 opacity-0 pointer-events-none z-[300] font-bold flex items-center gap-3"
+    >
+
+        <div id="toast-icon">
+            <i class="ph-fill ph-info text-blue-400 text-xl" aria-hidden="true"></i>
+        </div>
+
+        <span id="toast-message" class="tracking-wide">
+            Notification
+        </span>
+
     </div>
 
+
+    <!-- ==================== APPLICATION SCRIPTS ==================== -->
+
+    <!-- Main Application Logic -->
     <script src="app.js"></script>
+
+    <!-- Firebase Authentication -->
     <script type="module" src="firebase-auth.js"></script>
+
 </body>
 </html>
