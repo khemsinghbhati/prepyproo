@@ -1287,8 +1287,8 @@ window.app = {
                         </div>
 
                         <!-- Back -->
-                        <div class="absolute inset-0 backface-hidden rotate-y-180 bg-slate-900 border-2 border-blue-500/30 rounded-[3rem] p-8 sm:p-14 flex flex-col items-center justify-center text-center overflow-hidden shadow-[0_0_50px_rgba(59,130,246,0.15)]">
-                            ${this.safeImageURL(card.img) ? `<div class="flex-1 w-full min-h-0 flex items-center justify-center mb-8"><img src="${this.safeImageURL(card.img)}" alt="Flashcard attachment" loading="lazy" class="max-w-full max-h-[400px] object-contain rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-3"></div>` : ''}
+                        <div class="absolute inset-0 backface-hidden rotate-y-180 bg-slate-900 border-2 border-blue-500/30 rounded-[3rem] p-5 sm:p-8 flex flex-col items-center justify-start text-center overflow-y-auto overflow-x-hidden shadow-[0_0_50px_rgba(59,130,246,0.15)]">
+                            ${this.safeImageURL(card.img) ? `<div class="w-full flex flex-col items-center mb-6" onclick="event.stopPropagation()"><img src="${this.safeImageURL(card.img)}" alt="Flashcard attachment" loading="lazy" class="block w-auto h-auto max-w-full object-contain rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-2 sm:p-3"></div>` : ''}
                             ${card.back ? `<div class="shrink-0 overflow-y-auto max-h-1/2 w-full"><p class="text-2xl sm:text-4xl font-extrabold text-blue-100 whitespace-pre-line leading-relaxed">${this.escapeHTML(card.back)}</p></div>` : ''}
                         </div>
                     </div>
@@ -1353,7 +1353,7 @@ window.app = {
                     <span class="text-xs font-black text-slate-500 uppercase tracking-widest bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 shadow-inner whitespace-nowrap">Q ${studyContext.step+1} / ${questions.length}</span>
                 </div>
                 ${q.text ? `<h2 class="shrink-0 text-xl sm:text-2xl font-extrabold text-white leading-snug tracking-tight">${this.escapeHTML(q.text)}</h2>` : ''}
-                ${this.safeImageURL(q.img) ? `<img src="${this.safeImageURL(q.img)}" alt="Question illustration" loading="lazy" class="shrink-0 max-w-full max-h-56 sm:max-h-64 object-contain mx-auto my-4 rounded-xl shadow-xl border border-slate-700 bg-slate-950 p-2" style="max-height:min(26vh, 240px);">` : ''}
+                ${this.safeImageURL(q.img) ? `<img src="${this.safeImageURL(q.img)}" alt="Question illustration" loading="lazy" class="block w-auto h-auto max-w-full object-contain mx-auto my-5 rounded-xl shadow-xl border border-slate-700 bg-slate-950 p-2 sm:p-3">` : ''}
                 ${optionsHtml}
                 ${footerHtml}
                 <div class="h-2 shrink-0"></div>
