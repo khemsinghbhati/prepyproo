@@ -1,0 +1,131 @@
+PREPPRO — COMPLETE STEPS TO TEST LOCALLY ON WINDOWS
+
+Follow these steps in order. Local testing uses your Khem's-test branch and Firebase emulators, keeping emulator Firestore data separate from production.
+
+STEP 1: Open PowerShell in your project folder
+
+Open PowerShell or the VS Code terminal and run:
+
+cd C:\Users\bhati\prepyproo
+
+
+STEP 2: Check your current Git status
+
+Run:
+
+git status
+
+If you have uncommitted changes or untracked files, back them up before switching branches. The following command saves tracked and untracked changes in a stash:
+
+git stash push -u -m "Backup before local testing"
+
+If Git reports that there is nothing to stash, continue.
+
+
+STEP 3: Download the latest GitHub changes
+
+Run:
+
+git fetch origin
+
+Switch to your testing branch:
+
+git switch "Khem's-test"
+
+If Git says the branch does not exist locally, run this instead:
+
+git switch --track "origin/Khem's-test"
+
+Now pull the latest changes:
+
+git pull origin "Khem's-test"
+
+
+STEP 4: Check that Java 21 or newer is installed
+
+Run:
+
+java -version
+
+You need Java 21 or newer for the Firebase emulators.
+
+If Java is missing or the version is older than 21, run:
+
+winget install Microsoft.OpenJDK.21
+
+After installation, close PowerShell, open it again, and verify:
+
+java -version
+
+
+STEP 5: Check Node.js and npm
+
+Run:
+
+node --version
+npm --version
+
+If either command is not recognized, install Node.js LTS from:
+
+https://nodejs.org/
+
+Then reopen PowerShell.
+
+
+STEP 6: Install the Firebase CLI
+
+Run:
+
+npm install -g firebase-tools
+
+If it is already installed, this will update or reinstall it as needed.
+
+Verify the installation:
+
+firebase --version
+
+
+STEP 7: Start the local website and Firebase emulators
+
+Make sure you are still in the project root:
+
+cd C:\Users\bhati\prepyproo
+
+Run this exact command:
+
+firebase emulators:start --only hosting,auth,firestore --project demo-prepyproo
+
+Wait for the emulators to finish starting. Keep this terminal open while testing.
+
+Do not run firebase deploy. It is not required for local testing.
+
+
+STEP 8: Open PrepPro locally
+
+Open this address in Chrome:
+
+http://127.0.0.1:5000
+
+This is your local website. Do not use your production URL or the emulator dashboard URL to test the application itself.
+
+The Firebase Emulator dashboard is available at:
+
+http://127.0.0.1:4000
+
+
+STEP 9: Sign in for local testing
+
+If PrepPro displays its login screen, use the local Firebase Auth emulator's sign-in flow.
+
+Your production account data is not automatically imported into the emulator. Create test data locally instead.
+
+
+STEP 10: Stop the local application after testing
+
+When you finish testing, return to the PowerShell terminal running the emulators.
+
+Press:
+
+Ctrl+C
+
+Wait for the emulators to stop.
