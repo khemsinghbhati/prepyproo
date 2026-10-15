@@ -222,7 +222,8 @@ window.app = {
         }
 
         const container = document.getElementById('view-container');
-        container.innerHTML = ''; 
+        container.innerHTML = '';
+        container.scrollTop = 0;
         
         if (view === 'dashboard') this.renderDashboard(container);
         else if (view === 'analytics') this.renderAnalytics(container);
@@ -1419,7 +1420,12 @@ window.app = {
         const q = set?.questions?.[studyContext.step];
         if (!q) return this.showToast('Question not found.', 'error');
         if (this.evalQuizAnswer(q, studyContext.answers[studyContext.step])) studyContext.score++;
-        this.renderQuizPlayer(document.getElementById('view-container'));
+        const container = document.getElementById('view-container');
+        const scrollTop = container?.scrollTop || 0;
+        this.renderQuizPlayer(container);
+        requestAnimationFrame(() => {
+            if (container) container.scrollTop = scrollTop;
+        });
     },
     nextQuizQuestion() {
         // The Continue button is only available after checking the current answer.
@@ -1430,7 +1436,11 @@ window.app = {
         studyContext.isChecked = false;
         studyContext.step++;
         studyContext.qStart = Date.now();
-        this.renderQuizPlayer(document.getElementById('view-container'));
+        const container = document.getElementById('view-container');
+        this.renderQuizPlayer(container);
+        requestAnimationFrame(() => {
+            if (container) container.scrollTop = 0;
+        });
     },
     
     finishSession() {
