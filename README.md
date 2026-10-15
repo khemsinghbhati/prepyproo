@@ -110,6 +110,7 @@ Localhost automatically uses a separate demo Firebase project with the Auth and 
 - Local sign-in is simulated by the Auth emulator; it does not authenticate against the production Google sign-in service.
 - The `demo-prepyproo` project ID keeps emulator traffic separate from the real `prepyproo` Firebase project. Do not replace it with the production project ID when running local tests.
 - Emulator data is for testing only. It is separate from production data and may be lost when emulators stop unless you configure emulator data export/import.
+- This repository currently has no local Firestore rules file configured, so the Firestore emulator defaults to allowing all reads and writes. This is only for the local demo project; it does **not** test your production security rules. Add the same reviewed rules used by production before relying on local tests for security validation.
 - When the app is opened on a non-localhost domain, it uses the existing production Firebase configuration. Do not use a production-hosted deployment for testing destructive actions.
 
 ## 📄 License
