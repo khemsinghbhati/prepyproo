@@ -56,4 +56,3 @@ Click the **Analytics** tab in the sidebar to view your performance.
 © 2026 Khem Singh \& Avneel Singh. All Rights Reserved.
 
 This repository and its contents are not open-source. You may view the code for educational and portfolio evaluation purposes, but you may not copy, modify, distribute, or use it for commercial purposes without explicit permission.
-
