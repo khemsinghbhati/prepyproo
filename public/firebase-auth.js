@@ -350,11 +350,12 @@ onAuthStateChanged(auth, async (user) => {
                 if (!isValidData(remoteData)) return;
                 data = remoteData;
                 cacheUserData(user.uid, remoteData);
-                // Reinitializing the app resets the active study or XP screen to the dashboard.
-                const studyActive = typeof app !== "undefined" &&
-                    typeof app.isStudySessionActive === "function" &&
-                    app.isStudySessionActive();
-                if (!studyActive && typeof app !== "undefined" && typeof app.init === "function") app.init();
+                // Only refresh top-level views. Reinitializing during an editor resets navigation
+                // to the dashboard and interrupts creating question sets or questions.
+                const canRefresh = typeof app !== "undefined" &&
+                    typeof app.canRefreshFromCloud === "function" &&
+                    app.canRefreshFromCloud();
+                if (canRefresh) app.refreshCurrentView();
             },
             (error) => console.warn("Cloud updates listener failed:", error)
         );
