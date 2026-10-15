@@ -31,7 +31,7 @@ const firebaseApp = useFirebaseEmulators
 const auth = getAuth(firebaseApp);
 
 if (useFirebaseEmulators) {
-    connectAuthEmulator(auth, "http://127.0.0.1:9099");
+    connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
 }
 
 // IndexedDB-backed Firestore persistence; supports multiple tabs.
