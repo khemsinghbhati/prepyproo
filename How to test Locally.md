@@ -154,16 +154,3 @@ Wait for the emulators to stop.
 
 ---
 
-## Quick reference
-
-| Item | Value |
-| --- | --- |
-| Git branch | `Khem's-test` |
-| Local PrepPro website | [http://127.0.0.1:5000](http://127.0.0.1:5000) |
-| Emulator dashboard | [http://127.0.0.1:4000](http://127.0.0.1:4000) |
-| Auth emulator port | `9099` |
-| Firestore emulator port | `8080` |
-| Local emulator project ID | `demo-prepyproo` |
-
-> [!CAUTION]
-> Emulator data is separate from production, but it may be lost when emulators stop unless you configure data export/import. Image uploads still use the external ImgBB service and therefore require an internet connection.
