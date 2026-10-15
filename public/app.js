@@ -255,6 +255,14 @@ window.app = {
         `;
         container.classList.remove('hidden', 'opacity-0');
         content.classList.remove('scale-95');
+        const pasteTarget = content.querySelector('#q-text, #fc-front');
+        if (pasteTarget) {
+            requestAnimationFrame(() => {
+                if (!container.classList.contains('hidden') && pasteTarget.isConnected) {
+                    pasteTarget.focus({ preventScroll: true });
+                }
+            });
+        }
     },
     closeModal() { 
         const container = document.getElementById('modal-container');
@@ -297,6 +305,11 @@ window.app = {
     },
 
     // Hierarchy Finders
+    isStudySessionActive() {
+        return ['fc-viewer', 'quiz-player'].includes(currentView) ||
+            !!document.getElementById('session-completion-screen');
+    },
+
     findSubtopic(id) {
         for (let s of data.subjects) {
             for (let t of s.topics) {
@@ -1170,7 +1183,8 @@ window.app = {
         const type = document.getElementById('q-type').value;
         const text = document.getElementById('q-text').value.trim();
         if (app.imageUploadInProgress) return this.showToast("Please wait for the image upload to finish.", "error");
-        const imageUrl = this.safeImageURL(app.tempImageUrl);
+        const previewImage = document.querySelector('#img-preview img');
+        const imageUrl = this.safeImageURL(app.tempImageUrl || previewImage?.getAttribute('src') || '');
         if (!text && !imageUrl) return alert("Attach an image or enter question text.");
 
         let qObj = { id: editingQuestionId || generateId(), type, text, img: imageUrl };
@@ -1287,10 +1301,10 @@ window.app = {
         let optionsHtml = '';
         if (q.type === 'num') {
             let style = isChecked ? (studyContext.answers[studyContext.step] == q.correct ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-red-500 bg-red-500/10 text-red-400") : "border-slate-700 bg-slate-950 text-white focus:border-blue-500 shadow-inner";
-            let reveal = isChecked ? `<div class="mt-5 p-4 bg-slate-900 border border-slate-800 rounded-xl font-bold text-slate-400 text-sm sm:text-base tracking-wide uppercase shadow-inner text-center">Correct Answer: <span class="text-emerald-400 ml-2 text-lg sm:text-xl">${this.escapeHTML(q.correct)}</span></div>` : "";
-            optionsHtml = `<div class="mt-6"><input type="number" step="any" ${isChecked?'disabled':''} value="${this.escapeHTML(studyContext.answers[studyContext.step] || '')}" oninput="app.selectQuizAnswer(this.value)" class="w-full text-center text-2xl sm:text-3xl font-black py-5 sm:py-6 rounded-2xl border-2 ${style} outline-none shadow-xl transition-all shadow-inner">${reveal}</div>`;
+            let reveal = isChecked ? `<div class="mt-4 p-3 bg-slate-900 border border-slate-800 rounded-xl font-bold text-slate-400 text-sm tracking-wide uppercase shadow-inner text-center">Correct Answer: <span class="text-emerald-400 ml-2 text-base sm:text-lg">${this.escapeHTML(q.correct)}</span></div>` : "";
+            optionsHtml = `<div class="mt-4"><input type="number" step="any" ${isChecked?'disabled':''} value="${this.escapeHTML(studyContext.answers[studyContext.step] || '')}" oninput="app.selectQuizAnswer(this.value)" class="w-full text-center text-xl sm:text-2xl font-black py-3 sm:py-4 rounded-2xl border-2 ${style} outline-none shadow-xl transition-all shadow-inner">${reveal}</div>`;
         } else {
-            optionsHtml = `<div class="mt-6 space-y-3">`;
+            optionsHtml = `<div class="mt-4 space-y-2">`;
             const cur = studyContext.answers[studyContext.step] || (q.type === 'msq' ? [] : null);
             q.options.forEach((opt, idx) => {
                 let btnStyle = "border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300", icon = "";
@@ -1303,31 +1317,30 @@ window.app = {
                 } else {
                     if ((q.type === 'mcq' && cur === idx) || (q.type === 'msq' && cur.includes(idx))) btnStyle = "border-blue-500 bg-blue-600/20 text-blue-200 border-2 shadow-[0_0_20px_rgba(59,130,246,0.25)] scale-[1.02]";
                 }
-                optionsHtml += `<button type="button" ${isChecked?'':`onclick="app.selectQuizAnswer(${idx})"`} class="w-full text-left p-4 sm:p-5 rounded-2xl border-2 ${btnStyle} font-bold text-base sm:text-lg leading-snug flex items-center justify-between gap-4 transition-all"><span class="min-w-0 flex-1 break-words">${this.escapeHTML(opt)}</span>${icon}</button>`;
+                optionsHtml += `<button type="button" ${isChecked?'':`onclick="app.selectQuizAnswer(${idx})"`} class="w-full text-left p-3 sm:p-4 rounded-xl border-2 ${btnStyle} font-bold text-sm sm:text-base leading-snug flex items-center justify-between gap-3 transition-all"><span class="min-w-0 flex-1 break-words">${this.escapeHTML(opt)}</span>${icon}</button>`;
             });
             optionsHtml += `</div>`;
-            if(q.type==='msq') optionsHtml += `<p class="mt-4 text-center text-[10px] sm:text-xs font-black text-purple-400 bg-purple-500/10 py-2.5 rounded-xl border border-purple-500/20 uppercase tracking-widest shadow-sm">Select all that apply</p>`;
+            if(q.type==='msq') optionsHtml += `<p class="mt-3 text-center text-[10px] sm:text-xs font-black text-purple-400 bg-purple-500/10 py-2 rounded-xl border border-purple-500/20 uppercase tracking-widest shadow-sm">Select all that apply</p>`;
         }
 
         let footerHtml = "";
         if (isChecked) {
             const isCorrect = this.evalQuizAnswer(q, studyContext.answers[studyContext.step]);
-            const feedback = isCorrect ? `<div class="text-emerald-400 font-black text-lg sm:text-xl uppercase tracking-wider flex items-center gap-2"><i class="ph-fill ph-check-circle text-2xl"></i> Awesome!</div>` : `<div class="text-red-400 font-black text-lg sm:text-xl uppercase tracking-wider flex items-center gap-2"><i class="ph-fill ph-warning-circle text-2xl"></i> Review This.</div>`;
-            footerHtml = `<div class="mt-8 pt-5 pb-4 border-t border-slate-800"><div class="flex flex-col sm:flex-row gap-3 items-center justify-between">${feedback}<button type="button" onclick="app.nextQuizQuestion()" class="w-full sm:w-auto px-8 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl shadow-[0_4px_0_0_#065f46] active:translate-y-1 text-base sm:text-lg tracking-widest uppercase transition-all">Continue</button></div></div>`;
+            const feedback = isCorrect ? `<div class="text-emerald-400 font-black text-base sm:text-lg uppercase tracking-wider flex items-center gap-2"><i class="ph-fill ph-check-circle text-xl"></i> Awesome!</div>` : `<div class="text-red-400 font-black text-base sm:text-lg uppercase tracking-wider flex items-center gap-2"><i class="ph-fill ph-warning-circle text-xl"></i> Review This.</div>`;
+            footerHtml = `<div class="mt-5 pt-4 pb-3 border-t border-slate-800"><div class="flex flex-col sm:flex-row gap-3 items-center justify-between">${feedback}<button type="button" onclick="app.nextQuizQuestion()" class="w-full sm:w-auto px-8 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl shadow-[0_4px_0_0_#065f46] active:translate-y-1 text-base sm:text-lg tracking-widest uppercase transition-all">Continue</button></div></div>`;
         } else {
             const hasAns = (q.type!=='msq'&&q.type!=='num'&&studyContext.answers[studyContext.step]!=null) || (q.type==='msq'&&studyContext.answers[studyContext.step]?.length>0) || (q.type==='num'&&studyContext.answers[studyContext.step]);
-            footerHtml = `<div class="mt-8 pt-5 pb-4 border-t border-slate-800"><div class="flex justify-end"><button type="button" ${hasAns?'':'disabled'} onclick="app.checkQuizAnswer()" class="w-full sm:w-auto px-10 sm:px-12 py-3.5 ${hasAns?'bg-blue-600 text-white shadow-[0_4px_0_0_#1e3a8a] hover:bg-blue-500 border border-blue-400':'bg-slate-900 text-slate-700 shadow-[0_4px_0_0_#0f172a] cursor-not-allowed border border-slate-800'} font-black rounded-xl active:translate-y-1 transition-all text-base sm:text-lg uppercase tracking-widest">Check</button></div></div>`;
+            footerHtml = `<div class="mt-5 pt-4 pb-3 border-t border-slate-800"><div class="flex justify-end"><button type="button" ${hasAns?'':'disabled'} onclick="app.checkQuizAnswer()" class="w-full sm:w-auto px-10 sm:px-12 py-3.5 ${hasAns?'bg-blue-600 text-white shadow-[0_4px_0_0_#1e3a8a] hover:bg-blue-500 border border-blue-400':'bg-slate-900 text-slate-700 shadow-[0_4px_0_0_#0f172a] cursor-not-allowed border border-slate-800'} font-black rounded-xl active:translate-y-1 transition-all text-base sm:text-lg uppercase tracking-widest">Check</button></div></div>`;
         }
 
         container.innerHTML = `
-            <div class="quiz-question-scroll max-w-5xl mx-auto flex flex-col pt-3 pb-5 animate-pop"
-                 style="height:calc(100vh - 180px);height:calc(100dvh - 180px);max-height:calc(100vh - 180px);max-height:calc(100dvh - 180px);min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;">
-                <div class="w-full flex items-center justify-between mb-6 bg-slate-900 p-3 sm:p-4 rounded-xl border border-slate-800 shadow-lg shrink-0">
+            <div class="quiz-question-scroll max-w-5xl mx-auto flex flex-col pt-2 pb-4 animate-pop">
+                <div class="w-full flex items-center justify-between mb-4 bg-slate-900 p-2 sm:p-3 rounded-xl border border-slate-800 shadow-lg shrink-0">
                     <div class="flex-1 h-3 bg-slate-950 rounded-full mr-4 overflow-hidden border border-slate-800 shadow-inner"><div class="h-full bg-emerald-500 transition-all duration-500 shadow-[0_0_15px_rgba(16,185,129,0.8)]" style="width:${progress}%"></div></div>
                     <span class="text-xs font-black text-slate-500 uppercase tracking-widest bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 shadow-inner whitespace-nowrap">Q ${studyContext.step+1} / ${questions.length}</span>
                 </div>
-                ${q.text ? `<h2 class="shrink-0 text-2xl sm:text-3xl font-extrabold text-white leading-snug tracking-tight">${this.escapeHTML(q.text)}</h2>` : ''}
-                ${this.safeImageURL(q.img) ? `<img src="${this.safeImageURL(q.img)}" alt="Question illustration" loading="lazy" class="shrink-0 max-w-full max-h-64 sm:max-h-80 object-contain mx-auto my-6 rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-2" style="max-height:min(32vh, 320px);">` : ''}
+                ${q.text ? `<h2 class="shrink-0 text-xl sm:text-2xl font-extrabold text-white leading-snug tracking-tight">${this.escapeHTML(q.text)}</h2>` : ''}
+                ${this.safeImageURL(q.img) ? `<img src="${this.safeImageURL(q.img)}" alt="Question illustration" loading="lazy" class="shrink-0 max-w-full max-h-56 sm:max-h-64 object-contain mx-auto my-4 rounded-xl shadow-xl border border-slate-700 bg-slate-950 p-2" style="max-height:min(26vh, 240px);">` : ''}
                 ${optionsHtml}
                 ${footerHtml}
                 <div class="h-2 shrink-0"></div>
@@ -1336,13 +1349,33 @@ window.app = {
     },
     selectQuizAnswer(val) {
         const q = this.findSet(activeSubtopicId, activeSetId).questions[studyContext.step];
-        if (q.type === 'mcq' || q.type === 'num') studyContext.answers[studyContext.step] = val;
+        if (q.type === 'num') {
+            studyContext.answers[studyContext.step] = val;
+            const checkButton = document.querySelector('#view-container button[onclick="app.checkQuizAnswer()"]');
+            if (checkButton) {
+                const hasAnswer = String(val ?? '').trim() !== '';
+                checkButton.disabled = !hasAnswer;
+                checkButton.className = `w-full sm:w-auto px-10 sm:px-12 py-3.5 font-black rounded-xl active:translate-y-1 transition-all text-base sm:text-lg uppercase tracking-widest ${hasAnswer
+                    ? 'bg-blue-600 text-white shadow-[0_4px_0_0_#1e3a8a] hover:bg-blue-500 border border-blue-400'
+                    : 'bg-slate-900 text-slate-700 shadow-[0_4px_0_0_#0f172a] cursor-not-allowed border border-slate-800'}`;
+            }
+            return;
+        }
+
+        if (q.type === 'mcq') studyContext.answers[studyContext.step] = val;
         else {
             let arr = studyContext.answers[studyContext.step] || [];
             if (arr.includes(val)) arr = arr.filter(x => x !== val); else arr.push(val);
             studyContext.answers[studyContext.step] = arr;
         }
-        this.renderQuizPlayer(document.getElementById('view-container'));
+
+        const container = document.getElementById('view-container');
+        const scrollTop = container?.scrollTop || 0;
+        document.activeElement?.blur();
+        this.renderQuizPlayer(container);
+        requestAnimationFrame(() => {
+            if (container) container.scrollTop = scrollTop;
+        });
     },
     evalQuizAnswer(q, ans) {
         if(ans == null || ans === '') return false;
