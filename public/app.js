@@ -311,6 +311,18 @@ window.app = {
             !!document.getElementById('session-completion-screen');
     },
 
+    canRefreshFromCloud() {
+        const modal = document.getElementById('modal-container');
+        return ['dashboard', 'analytics'].includes(currentView) &&
+            (!modal || modal.classList.contains('hidden')) &&
+            !this.isStudySessionActive();
+    },
+
+    refreshCurrentView() {
+        this.updateUI();
+        this.setView(currentView, true);
+    },
+
     findSubtopic(id) {
         for (let s of data.subjects) {
             for (let t of s.topics) {
