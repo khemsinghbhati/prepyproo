@@ -1,11 +1,8 @@
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const colors = ['bg-blue-600', 'bg-purple-600', 'bg-emerald-600', 'bg-rose-600', 'bg-amber-600'];
-const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-}[char]));
 
 const defaultData = { subjects: [], xp: 0 };
-let data = JSON.parse(localStorage.getItem('prepProData_v12')) || JSON.parse(JSON.stringify(defaultData));
+let data = JSON.parse(JSON.stringify(defaultData));
 
 let isEditMode = true; 
 let currentView = 'dashboard';
@@ -13,6 +10,8 @@ let viewHistory = [];
 let activeSubtopicId = null; 
 let activeSetId = null; 
 let activeAnalyticsSubjectId = null; 
+let editingFlashcardId = null;
+let editingQuestionId = null;
 let studyContext = { type: null, step: 0, score: 0, answers: {}, isFlipped: false, isChecked: false, timeSpent: [], qStart: 0 };
 
 window.app = {
@@ -23,10 +22,17 @@ window.app = {
         this.setView('dashboard');
     },
 
-    save() {
-        localStorage.setItem('prepProData_v12', JSON.stringify(data));
+    async save() {
         this.updateXPHeader();
-        if (window.syncToCloud) window.syncToCloud(data);
+        if (!window.saveUserData) {
+            console.warn("User data storage is not initialized.");
+            return;
+        }
+        try {
+            await window.saveUserData(data);
+        } catch (error) {
+            console.error("PrepPlanner save failed:", error);
+        }
     },
 
     resetAllData() {
@@ -173,6 +179,9 @@ window.app = {
         `;
         this.showModal(title, html);
         setTimeout(() => document.getElementById('prompt-input').focus(), 100);
+    },
+    escapeHTML(value = '') {
+        return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
     },
 
     // Hierarchy Finders
@@ -370,7 +379,7 @@ window.app = {
         const preview = document.getElementById('img-preview');
         if (preview) preview.innerHTML = `<p class="text-sm text-blue-400 font-bold mt-4 animate-pulse flex items-center"><i class="ph-bold ph-spinner animate-spin text-xl mr-2"></i>Uploading securely...</p>`;
 
-        const IMGBB_API_KEY = "40b859e541d2f8912f8701563274f12e";
+        const IMGBB_API_KEY = "8736c69a8eeb5f631ed760d94b342e68";
         const formData = new FormData();
         formData.append("image", file);
 
@@ -596,17 +605,15 @@ window.app = {
         st.flashcards.forEach((fc, idx) => {
             html += `
                 <div class="p-6 rounded-2xl border border-slate-800 bg-slate-900 relative group shadow-lg hover:border-slate-600 transition-colors">
-                    <div class="flex items-start gap-3 mb-4 pb-4 border-b border-slate-800">
-                        <p class="font-extrabold text-base text-white leading-relaxed flex-1"><span class="text-slate-500 mr-2 uppercase text-xs tracking-widest">Q:</span>${escapeHtml(fc.front)}</p>
-                        <div class="flex items-center gap-1 shrink-0">
-                            <button onclick="app.editFlashcard(${idx})" class="text-slate-500 hover:text-blue-400 p-2 bg-slate-950 rounded-lg border border-slate-800 transition-colors" title="Edit flashcard" aria-label="Edit flashcard"><i class="ph-bold ph-pencil-simple text-lg"></i></button>
-                            <button onclick="app.moveFlashcard(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} class="text-slate-500 hover:text-blue-400 p-2 bg-slate-950 rounded-lg border border-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="Move up" aria-label="Move flashcard up"><i class="ph-bold ph-arrow-up text-lg"></i></button>
-                            <button onclick="app.moveFlashcard(${idx}, 1)" ${idx === st.flashcards.length - 1 ? 'disabled' : ''} class="text-slate-500 hover:text-blue-400 p-2 bg-slate-950 rounded-lg border border-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="Move down" aria-label="Move flashcard down"><i class="ph-bold ph-arrow-down text-lg"></i></button>
-                            <button onclick="app.deleteItem('fc', ${idx})" class="text-slate-600 hover:text-red-400 p-2 bg-slate-950 rounded-lg shadow-sm border border-slate-800 transition-colors" title="Delete flashcard" aria-label="Delete flashcard"><i class="ph-bold ph-trash text-lg"></i></button>
-                        </div>
+                    <div class="absolute top-4 right-4 flex gap-2">
+                        <button onclick="app.editFlashcard('${fc.id}')" title="Edit flashcard" aria-label="Edit flashcard" class="text-slate-500 hover:text-blue-400 p-2 bg-slate-950 rounded-lg shadow-sm border border-slate-800 transition-colors"><i class="ph-bold ph-pencil-simple text-lg"></i></button>
+                        <button onclick="app.moveFlashcard(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} title="Move up" aria-label="Move flashcard up" class="text-slate-500 hover:text-blue-400 p-2 bg-slate-950 rounded-lg shadow-sm border border-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><i class="ph-bold ph-arrow-up text-lg"></i></button>
+                        <button onclick="app.moveFlashcard(${idx}, 1)" ${idx === st.flashcards.length - 1 ? 'disabled' : ''} title="Move down" aria-label="Move flashcard down" class="text-slate-500 hover:text-blue-400 p-2 bg-slate-950 rounded-lg shadow-sm border border-slate-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><i class="ph-bold ph-arrow-down text-lg"></i></button>
+                        <button onclick="app.deleteItem('fc', ${idx})" title="Delete flashcard" class="text-slate-500 hover:text-red-400 p-2 bg-slate-950 rounded-lg shadow-sm border border-slate-800 transition-colors"><i class="ph-bold ph-trash text-lg"></i></button>
                     </div>
-                    ${fc.img ? `<img src="${escapeHtml(fc.img)}" class="max-h-48 object-contain my-4 rounded-xl border border-slate-700 bg-slate-950 p-2 w-full shadow-inner">` : ''}
-                    ${fc.back ? `<p class="text-sm text-slate-300 line-clamp-4 font-bold leading-relaxed"><span class="text-slate-600 mr-2 uppercase text-xs tracking-widest">A:</span>${escapeHtml(fc.back)}</p>` : ''}
+                    <p class="font-extrabold text-base text-white mb-4 pb-4 border-b border-slate-800 leading-relaxed"><span class="text-slate-500 mr-2 uppercase text-xs tracking-widest">Q:</span>${fc.front}</p>
+                    ${fc.img ? `<img src="${fc.img}" class="max-h-48 object-contain my-4 rounded-xl border border-slate-700 bg-slate-950 p-2 w-full shadow-inner">` : ''}
+                    ${fc.back ? `<p class="text-sm text-slate-300 line-clamp-4 font-bold leading-relaxed"><span class="text-slate-600 mr-2 uppercase text-xs tracking-widest">A:</span>${fc.back}</p>` : ''}
                 </div>
             `;
         });
@@ -630,7 +637,8 @@ window.app = {
                         <p class="text-[10px] font-black text-slate-500 mt-1 uppercase tracking-widest">${set.questions.length} Questions</p>
                     </div>
                     <div class="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onclick="app.editSet('${set.id}')" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-black tracking-widest uppercase transition-colors shadow-sm border border-slate-700">Edit</button>
+                        <button onclick="app.renameSet('${set.id}')" title="Rename question set" class="p-2.5 bg-slate-800 hover:bg-slate-700 text-blue-400 rounded-lg border border-slate-700"><i class="ph-bold ph-pencil-simple"></i></button>
+                        <button onclick="app.editSet('${set.id}')" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-black tracking-widest uppercase transition-colors shadow-sm border border-slate-700">Questions</button>
                         <button onclick="app.deleteItem('set', ${idx})" class="p-2.5 bg-slate-950 text-slate-500 hover:text-red-400 border border-slate-800 hover:border-red-500/30 rounded-lg transition-colors"><i class="ph-bold ph-trash text-lg"></i></button>
                     </div>
                 </div>
@@ -642,8 +650,21 @@ window.app = {
 
     _createSet(name) {
         const stData = this.findSubtopic(activeSubtopicId);
+        if (!stData) return;
         stData.subtopic.questionSets.push({ id: generateId(), name, questions: [], history: [] });
         this.save(); this.setView('subtopic-editor');
+    },
+    renameSet(setId) {
+        const set = this.findSet(activeSubtopicId, setId);
+        if (set) this.promptInput("Rename Question Set", "Set Name", `app._updateSetName('${setId}', val)`, set.name);
+    },
+    _updateSetName(setId, name) {
+        const set = this.findSet(activeSubtopicId, setId);
+        if (!set || !name.trim()) return;
+        set.name = name.trim();
+        this.save();
+        this.setView('subtopic-editor');
+        this.showToast("Question set renamed.", "success");
     },
     editSet(setId) {
         activeSetId = setId;
@@ -688,7 +709,10 @@ window.app = {
             let typeBadge = q.type === 'mcq' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : (q.type==='msq' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : 'bg-orange-500/10 text-orange-400 border border-orange-500/20');
             html += `
                 <div class="p-6 sm:p-8 rounded-[2rem] border border-slate-800 bg-slate-900 relative shadow-xl group hover:border-slate-600 transition-colors">
-                    <button onclick="app.deleteItem('q', ${idx})" class="absolute top-6 right-6 text-slate-600 hover:text-red-400 p-2.5 bg-slate-950 rounded-xl hover:bg-slate-800 transition-colors border border-slate-800"><i class="ph-bold ph-trash text-xl"></i></button>
+                    <div class="absolute top-5 right-5 flex gap-2">
+                        <button onclick="app.editQuestion(${idx})" title="Edit question" class="text-slate-400 hover:text-blue-400 p-2.5 bg-slate-950 rounded-xl hover:bg-slate-800 transition-colors border border-slate-800"><i class="ph-bold ph-pencil-simple text-lg"></i></button>
+                        <button onclick="app.deleteItem('q', ${idx})" title="Delete question" class="text-slate-600 hover:text-red-400 p-2.5 bg-slate-950 rounded-xl hover:bg-slate-800 transition-colors border border-slate-800"><i class="ph-bold ph-trash text-xl"></i></button>
+                    </div>
                     
                     <div class="flex items-center gap-2 mb-6 border-b border-slate-800 pb-5">
                         <span class="text-[10px] uppercase font-black px-3 py-1.5 rounded-lg ${typeBadge} tracking-widest">${q.type}</span>
@@ -711,37 +735,30 @@ window.app = {
     },
 
     // Modals for Flashcards & Questions
-    showFlashcardForm(index = null) {
-        const stData = this.findSubtopic(activeSubtopicId);
-        if (!stData) return;
-        const existing = index === null ? null : stData.subtopic.flashcards[index];
-        if (index !== null && !existing) return;
-        app.tempImageUrl = existing?.img || '';
+    showFlashcardForm(card = null) {
+        editingFlashcardId = card ? card.id : null;
+        app.tempImageUrl = card?.img || '';
         const html = `
             <div class="space-y-6">
                 <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Front (Question)</label>
-                <textarea id="fc-front" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-bold text-lg shadow-inner">${escapeHtml(existing?.front || '')}</textarea></div>
-                
+                <textarea id="fc-front" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-bold text-lg shadow-inner">${this.escapeHTML(card?.front || '')}</textarea></div>
                 <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Back (Answer) <span class="text-slate-600">- Optional if image</span></label>
-                <textarea id="fc-back" rows="3" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-medium shadow-inner placeholder-slate-700" placeholder="Type answer details here...">${escapeHtml(existing?.back || '')}</textarea></div>
-                
+                <textarea id="fc-back" rows="3" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-medium shadow-inner placeholder-slate-700" placeholder="Type answer details here...">${this.escapeHTML(card?.back || '')}</textarea></div>
                 <div class="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
                     <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Image Attachment</label>
                     <input type="file" accept="image/*" onchange="app.handleImageUpload(event)" class="w-full text-sm text-slate-400 file:mr-4 file:py-3 file:px-5 file:rounded-xl file:border-0 file:text-xs file:font-black file:tracking-widest file:uppercase file:bg-blue-600 file:text-white hover:file:bg-blue-500 transition-all cursor-pointer mb-5">
-                    
                     <div class="flex items-center gap-4 mb-4"><div class="h-px bg-slate-800 flex-1"></div><span class="text-[10px] text-slate-600 font-black uppercase tracking-widest">OR PASTE URL</span><div class="h-px bg-slate-800 flex-1"></div></div>
-                    
-                    <input type="text" id="img-url-input" value="${escapeHtml(existing?.img || '')}" placeholder="https://..." oninput="app.handleImageUrl(this.value)" class="w-full px-5 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-white focus:border-blue-500 outline-none font-mono text-sm shadow-inner">
-                    <div id="img-preview">${existing?.img ? `<img src="${escapeHtml(existing.img)}" class="max-h-40 object-contain rounded-xl shadow-lg border border-slate-700 mt-4 bg-slate-950 p-2">` : ''}</div>
+                    <input type="text" id="img-url-input" value="${this.escapeHTML(card?.img || '')}" placeholder="https://..." oninput="app.handleImageUrl(this.value)" class="w-full px-5 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-white focus:border-blue-500 outline-none font-mono text-sm shadow-inner">
+                    <div id="img-preview">${card?.img ? `<img src="${this.escapeHTML(card.img)}" class="max-h-40 object-contain rounded-xl shadow-lg border border-slate-700 mt-4 bg-slate-950 p-2">` : ''}</div>
                 </div>
-
-                <button onclick="app.saveFlashcard(${index === null ? 'null' : index})" class="w-full py-4 bg-blue-600 text-white font-black tracking-widest uppercase text-sm rounded-xl hover:bg-blue-500 transition shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 mt-6 border border-blue-500">${existing ? 'Update Flashcard' : 'Save Flashcard'}</button>
-            </div>
-        `;
-        this.showModal(existing ? "Edit Flashcard" : "New Flashcard", html);
+                <button onclick="app.saveFlashcard()" class="w-full py-4 bg-blue-600 text-white font-black tracking-widest uppercase text-sm rounded-xl hover:bg-blue-500 transition shadow-[0_4px_0_0_#1e3a8a] active:translate-y-1 mt-6 border border-blue-500">${card ? 'Update Flashcard' : 'Save Flashcard'}</button>
+            </div>`;
+        this.showModal(card ? "Edit Flashcard" : "New Flashcard", html);
     },
-    editFlashcard(index) {
-        this.showFlashcardForm(index);
+    editFlashcard(cardId) {
+        const stData = this.findSubtopic(activeSubtopicId);
+        const card = stData?.subtopic.flashcards.find(x => x.id === cardId);
+        if (card) this.showFlashcardForm(card);
     },
     moveFlashcard(index, direction) {
         const stData = this.findSubtopic(activeSubtopicId);
@@ -754,42 +771,41 @@ window.app = {
         this.setView('subtopic-editor');
         this.showToast(direction < 0 ? "Flashcard moved up." : "Flashcard moved down.", "success");
     },
-    saveFlashcard(index = null) {
+    saveFlashcard() {
         const front = document.getElementById('fc-front').value.trim();
         const back = document.getElementById('fc-back').value.trim();
-        if(!front) return alert("Front text is required.");
-        if(!back && !app.tempImageUrl) return alert("Please provide either Back text or an Image.");
-        
+        if (!front) return alert("Front text is required.");
+        if (!back && !app.tempImageUrl) return alert("Please provide either Back text or an Image.");
         const stData = this.findSubtopic(activeSubtopicId);
-        if (!stData) return;
-        if (index === null) {
-            stData.subtopic.flashcards.push({ id: generateId(), front, back, img: app.tempImageUrl });
+        if (!stData) return this.showToast("Subtopic not found.", "error");
+        if (editingFlashcardId) {
+            const card = stData.subtopic.flashcards.find(x => x.id === editingFlashcardId);
+            if (card) Object.assign(card, { front, back, img: app.tempImageUrl });
         } else {
-            const card = stData.subtopic.flashcards[index];
-            if (!card) return;
-            card.front = front;
-            card.back = back;
-            card.img = app.tempImageUrl;
+            stData.subtopic.flashcards.push({ id: generateId(), front, back, img: app.tempImageUrl });
         }
+        editingFlashcardId = null;
         app.tempImageUrl = '';
         this.save(); this.closeModal(); this.setView('subtopic-editor');
+        this.showToast("Flashcard saved.", "success");
     },
 
-    showQuestionForm() {
-        app.tempImageUrl = '';
+    showQuestionForm(question = null) {
+        editingQuestionId = question ? question.id : null;
+        app.tempImageUrl = question?.img || '';
         const html = `
             <div class="space-y-6">
                 <div>
                     <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Question Type</label>
                     <select id="q-type" onchange="app.renderQuestionFields()" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white outline-none font-bold shadow-inner appearance-none cursor-pointer tracking-wide">
-                        <option value="mcq">Multiple Choice (MCQ)</option>
-                        <option value="msq">Multiple Select (MSQ)</option>
-                        <option value="num">Numerical</option>
+                        <option value="mcq" ${question?.type === 'mcq' ? 'selected' : ''}>Multiple Choice (MCQ)</option>
+                        <option value="msq" ${question?.type === 'msq' ? 'selected' : ''}>Multiple Select (MSQ)</option>
+                        <option value="num" ${question?.type === 'num' ? 'selected' : ''}>Numerical</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Question Text</label>
-                    <textarea id="q-text" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none font-bold text-lg shadow-inner"></textarea>
+                    <textarea id="q-text" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none font-bold text-lg shadow-inner">${this.escapeHTML(question?.text || '')}</textarea>
                 </div>
                 
                 <div class="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
@@ -798,16 +814,35 @@ window.app = {
                     
                     <div class="flex items-center gap-4 mb-4"><div class="h-px bg-slate-800 flex-1"></div><span class="text-[10px] text-slate-600 font-black uppercase tracking-widest">OR PASTE URL</span><div class="h-px bg-slate-800 flex-1"></div></div>
                     
-                    <input type="text" id="img-url-input" placeholder="https://..." oninput="app.handleImageUrl(this.value)" class="w-full px-5 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-white focus:border-blue-500 outline-none font-mono text-sm shadow-inner">
-                    <div id="img-preview"></div>
+                    <input type="text" id="img-url-input" value="${this.escapeHTML(question?.img || '')}" placeholder="https://..." oninput="app.handleImageUrl(this.value)" class="w-full px-5 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-white focus:border-blue-500 outline-none font-mono text-sm shadow-inner">
+                    <div id="img-preview">${question?.img ? `<img src="${this.escapeHTML(question.img)}" class="max-h-40 object-contain rounded-xl shadow-lg border border-slate-700 mt-4 bg-slate-950 p-2">` : ''}</div>
                 </div>
 
                 <div id="q-dynamic-fields" class="p-5 bg-slate-900 rounded-2xl border border-slate-800 shadow-inner"></div>
-                <button onclick="app.saveQuestion()" class="w-full py-4 bg-emerald-600 text-white font-black tracking-widest uppercase text-sm rounded-xl hover:bg-emerald-500 transition shadow-[0_4px_0_0_#065f46] active:translate-y-1 mt-6 border border-emerald-500">Save Question</button>
+                <button onclick="app.saveQuestion()" class="w-full py-4 bg-emerald-600 text-white font-black tracking-widest uppercase text-sm rounded-xl hover:bg-emerald-500 transition shadow-[0_4px_0_0_#065f46] active:translate-y-1 mt-6 border border-emerald-500">${question ? 'Update Question' : 'Save Question'}</button>
             </div>
         `;
-        this.showModal("New Question", html);
+        this.showModal(question ? "Edit Question" : "New Question", html);
         this.renderQuestionFields();
+        if (question) {
+            if (question.type === 'num') {
+                const answer = document.getElementById('q-num-ans');
+                if (answer) answer.value = question.correct ?? '';
+            } else {
+                const correctIndexes = Array.isArray(question.correct) ? question.correct : [question.correct];
+                (question.options || []).forEach((option, i) => {
+                    const optionInput = document.getElementById(`q-opt-${i}`);
+                    const correctInput = document.getElementById(`q-correct-opt-${i}`);
+                    if (optionInput) optionInput.value = option;
+                    if (correctInput) correctInput.checked = correctIndexes.includes(i);
+                });
+            }
+        }
+    },
+    editQuestion(index) {
+        const set = this.findSet(activeSubtopicId, activeSetId);
+        const question = set?.questions[index];
+        if (question) this.showQuestionForm(question);
     },
     renderQuestionFields() {
         const type = document.getElementById('q-type').value;
@@ -834,7 +869,7 @@ window.app = {
         const text = document.getElementById('q-text').value.trim();
         if(!text) return alert("Question text is required.");
 
-        let qObj = { id: generateId(), type, text, img: app.tempImageUrl };
+        let qObj = { id: editingQuestionId || generateId(), type, text, img: app.tempImageUrl };
         
         if (type === 'num') {
             const ans = document.getElementById('q-num-ans').value;
@@ -861,9 +896,17 @@ window.app = {
         }
 
         const set = this.findSet(activeSubtopicId, activeSetId);
-        set.questions.push(qObj);
+        if (!set) return this.showToast("Question set not found.", "error");
+        if (editingQuestionId) {
+            const index = set.questions.findIndex(x => x.id === editingQuestionId);
+            if (index !== -1) set.questions[index] = qObj;
+        } else {
+            set.questions.push(qObj);
+        }
+        editingQuestionId = null;
         app.tempImageUrl = '';
         this.save(); this.closeModal(); this.setView('set-editor');
+        this.showToast("Question saved.", "success");
     },
 
     startStudy(type, setId = null) {
@@ -897,13 +940,13 @@ window.app = {
                         <!-- Front -->
                         <div class="absolute inset-0 backface-hidden bg-slate-900 border-2 border-slate-800 rounded-[3rem] p-8 sm:p-14 flex flex-col items-center justify-center text-center shadow-2xl">
                             <span class="absolute top-10 left-1/2 transform -translate-x-1/2 text-[10px] font-black text-blue-400 bg-blue-500/10 px-5 py-2.5 rounded-xl uppercase tracking-widest border border-blue-500/20">Tap to flip</span>
-                            <h3 class="text-4xl sm:text-6xl font-black text-white leading-tight tracking-tight">${escapeHtml(card.front)}</h3>
+                            <h3 class="text-4xl sm:text-6xl font-black text-white leading-tight tracking-tight">${card.front}</h3>
                         </div>
 
                         <!-- Back -->
                         <div class="absolute inset-0 backface-hidden rotate-y-180 bg-slate-900 border-2 border-blue-500/30 rounded-[3rem] p-8 sm:p-14 flex flex-col items-center justify-center text-center overflow-hidden shadow-[0_0_50px_rgba(59,130,246,0.15)]">
-                            ${card.img ? `<div class="flex-1 w-full min-h-0 flex items-center justify-center mb-8"><img src="${escapeHtml(card.img)}" class="max-w-full max-h-[400px] object-contain rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-3"></div>` : ''}
-                            ${card.back ? `<div class="shrink-0 overflow-y-auto max-h-1/2 w-full"><p class="text-2xl sm:text-4xl font-extrabold text-blue-100 whitespace-pre-line leading-relaxed">${escapeHtml(card.back)}</p></div>` : ''}
+                            ${card.img ? `<div class="flex-1 w-full min-h-0 flex items-center justify-center mb-8"><img src="${card.img}" class="max-w-full max-h-[400px] object-contain rounded-2xl shadow-xl border border-slate-700 bg-slate-950 p-3"></div>` : ''}
+                            ${card.back ? `<div class="shrink-0 overflow-y-auto max-h-1/2 w-full"><p class="text-2xl sm:text-4xl font-extrabold text-blue-100 whitespace-pre-line leading-relaxed">${card.back}</p></div>` : ''}
                         </div>
                     </div>
                 </div>
