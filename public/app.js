@@ -1072,7 +1072,7 @@ window.app = {
                 <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Back (Answer) <span class="text-slate-600">- Optional if image</span></label>
                 <textarea id="fc-back" rows="3" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-medium shadow-inner placeholder-slate-700" placeholder="Type answer details here...">${this.escapeHTML(card?.back || '')}</textarea></div>
                 <div class="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
-                    <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Image Attachment</label>
+                    <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Attach / Ctrl+V</label>
                     <input type="file" accept="image/*" onchange="app.handleImageUpload(event)" class="w-full text-sm text-slate-400 file:mr-4 file:py-3 file:px-5 file:rounded-xl file:border-0 file:text-xs file:font-black file:tracking-widest file:uppercase file:bg-blue-600 file:text-white hover:file:bg-blue-500 transition-all cursor-pointer mb-5">
                     <div class="flex items-center gap-4 mb-4"><div class="h-px bg-slate-800 flex-1"></div><span class="text-[10px] text-slate-600 font-black uppercase tracking-widest">OR PASTE URL</span><div class="h-px bg-slate-800 flex-1"></div></div>
                     <input type="text" id="img-url-input" value="${this.escapeHTML(card?.img || '')}" placeholder="https://..." oninput="app.handleImageUrl(this.value)" class="w-full px-5 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-white focus:border-blue-500 outline-none font-mono text-sm shadow-inner">
@@ -1137,7 +1137,7 @@ window.app = {
                 </div>
                 
                 <div class="bg-slate-950/50 p-5 rounded-2xl border border-slate-800">
-                    <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Image Attachment</label>
+                    <label class="block text-[10px] font-black text-slate-500 mb-3 uppercase tracking-widest">Attach / Ctrl+V</label>
                     <input type="file" accept="image/*" onchange="app.handleImageUpload(event)" class="w-full text-sm text-slate-400 file:mr-4 file:py-3 file:px-5 file:rounded-xl file:border-0 file:text-xs file:font-black file:tracking-widest file:uppercase file:bg-blue-600 file:text-white hover:file:bg-blue-500 transition-all cursor-pointer mb-5">
                     
                     <div class="flex items-center gap-4 mb-4"><div class="h-px bg-slate-800 flex-1"></div><span class="text-[10px] text-slate-600 font-black uppercase tracking-widest">OR PASTE URL</span><div class="h-px bg-slate-800 flex-1"></div></div>
