@@ -86,6 +86,9 @@ PrepPro is a serverless, single-page learning app that helps students organize s
 
 ## 🧪 Local Testing with Firebase Emulators
 
+For the complete step-by-step setup and testing instructions, see [How to test Locally.md](How%20to%20test%20Locally.md).
+
+
 Localhost automatically uses a separate demo Firebase project with the Auth and Firestore emulators. The deployed site continues to use the configured production Firebase project.
 
 ### Start the local app
