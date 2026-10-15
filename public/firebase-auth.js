@@ -350,8 +350,11 @@ onAuthStateChanged(auth, async (user) => {
                 if (!isValidData(remoteData)) return;
                 data = remoteData;
                 cacheUserData(user.uid, remoteData);
-                // Assumes app.init() renders from the global `data` variable, as in the original code.
-                if (typeof app !== "undefined" && typeof app.init === "function") app.init();
+                // Reinitializing the app resets the active study or XP screen to the dashboard.
+                const studyActive = typeof app !== "undefined" &&
+                    typeof app.isStudySessionActive === "function" &&
+                    app.isStudySessionActive();
+                if (!studyActive && typeof app !== "undefined" && typeof app.init === "function") app.init();
             },
             (error) => console.warn("Cloud updates listener failed:", error)
         );
