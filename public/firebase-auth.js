@@ -5,11 +5,12 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import {
-    getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged
+    getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged,
+    connectAuthEmulator
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import {
-    initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-    doc, setDoc, getDoc, onSnapshot
+    initializeFirestore, connectFirestoreEmulator, persistentLocalCache,
+    persistentMultipleTabManager, doc, setDoc, getDoc, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // Firebase web configuration is public client configuration, not a server secret.
@@ -23,12 +24,26 @@ const firebaseConfig = {
     measurementId: "G-N0R12V9Y2K"
 };
 
-const firebaseApp = initializeApp(firebaseConfig);
+const useFirebaseEmulators = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(location.hostname);
+const firebaseApp = useFirebaseEmulators
+    ? initializeApp({ ...firebaseConfig, projectId: "demo-prepyproo" }, "prepyproo-local")
+    : initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
+
+if (useFirebaseEmulators) {
+    connectAuthEmulator(auth, "http://127.0.0.1:9099");
+}
+
 // IndexedDB-backed Firestore persistence; supports multiple tabs.
 const db = initializeFirestore(firebaseApp, {
     localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 });
+
+if (useFirebaseEmulators) {
+    connectFirestoreEmulator(db, "127.0.0.1", 8080);
+    console.info("PrepPro is using local Firebase Auth and Firestore emulators.");
+}
+
 const provider = new GoogleAuthProvider();
 
 let currentUser = null;
