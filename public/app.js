@@ -31,7 +31,7 @@ let studyContext = { type: null, step: 0, score: 0, answers: {}, isFlipped: fals
 
 window.app = {
     tempImageUrl: '',
-    sessionCompletionTimer: null,
+    imageUploadInProgress: false,
 
     init() {
         data = this.normalizeData(data);
@@ -573,6 +573,7 @@ window.app = {
             return;
         }
 
+        this.imageUploadInProgress = true;
         const preview = document.getElementById('img-preview');
         if (preview) preview.innerHTML = `<p class="text-sm text-blue-400 font-bold mt-4 animate-pulse flex items-center"><i class="ph-bold ph-spinner animate-spin text-xl mr-2"></i>Uploading securely...</p>`;
 
@@ -606,6 +607,8 @@ window.app = {
             console.error(err);
             app.showToast("Upload failed: " + err.message, "error");
             if (preview) preview.innerHTML = `<p class="text-sm text-red-400 font-bold mt-3 border border-red-500/30 bg-red-500/10 p-2 rounded-lg">Upload failed.</p>`;
+        } finally {
+            this.imageUploadInProgress = false;
         }
     },
 
@@ -1036,7 +1039,7 @@ window.app = {
         editingFlashcardId = card ? card.id : null;
         app.tempImageUrl = card?.img || '';
         const html = `
-            <div class="space-y-6" onpaste="app.handleImageUpload(event)">
+            <div class="space-y-6">
                 <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Front (Question)</label>
                 <textarea id="fc-front" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none font-bold text-lg shadow-inner">${this.escapeHTML(card?.front || '')}</textarea></div>
                 <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Back (Answer) <span class="text-slate-600">- Optional if image</span></label>
@@ -1071,6 +1074,7 @@ window.app = {
     saveFlashcard() {
         const front = document.getElementById('fc-front').value.trim();
         const back = document.getElementById('fc-back').value.trim();
+        if (app.imageUploadInProgress) return this.showToast("Please wait for the image upload to finish.", "error");
         if (!front) return alert("Front text is required.");
         if (!back && !app.tempImageUrl) return alert("Please provide either Back text or an Image.");
         const stData = this.findSubtopic(activeSubtopicId);
@@ -1091,7 +1095,7 @@ window.app = {
         editingQuestionId = question ? question.id : null;
         app.tempImageUrl = question?.img || '';
         const html = `
-            <div class="space-y-6" onpaste="app.handleImageUpload(event)">
+            <div class="space-y-6">
                 <div>
                     <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Question Type</label>
                     <select id="q-type" onchange="app.renderQuestionFields()" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white outline-none font-bold shadow-inner appearance-none cursor-pointer tracking-wide">
@@ -1101,7 +1105,7 @@ window.app = {
                     </select>
                 </div>
                 <div>
-                    <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Question Text</label>
+                    <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">Question Text <span class="text-slate-600">- Optional if image attached</span></label>
                     <textarea id="q-text" rows="2" class="w-full px-5 py-4 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none font-bold text-lg shadow-inner">${this.escapeHTML(question?.text || '')}</textarea>
                 </div>
                 
@@ -1164,9 +1168,11 @@ window.app = {
     saveQuestion() {
         const type = document.getElementById('q-type').value;
         const text = document.getElementById('q-text').value.trim();
-        if (!text && !app.tempImageUrl) return alert("Provide question text or an image.");
+        if (app.imageUploadInProgress) return this.showToast("Please wait for the image upload to finish.", "error");
+        const imageUrl = this.safeImageURL(app.tempImageUrl);
+        if (!text && !imageUrl) return alert("Attach an image or enter question text.");
 
-        let qObj = { id: editingQuestionId || generateId(), type, text, img: app.tempImageUrl };
+        let qObj = { id: editingQuestionId || generateId(), type, text, img: imageUrl };
         
         if (type === 'num') {
             const ans = document.getElementById('q-num-ans').value;
@@ -1393,15 +1399,7 @@ window.app = {
         this.renderQuizPlayer(document.getElementById('view-container'));
     },
     
-    continueAfterSession() {
-        if (this.sessionCompletionTimer) clearTimeout(this.sessionCompletionTimer);
-        this.sessionCompletionTimer = null;
-        this.goBack();
-    },
-
     finishSession() {
-        if (this.sessionCompletionTimer) clearTimeout(this.sessionCompletionTimer);
-        this.sessionCompletionTimer = null;
         let xpGained = 10; 
         const stData = this.findSubtopic(activeSubtopicId);
         
@@ -1450,12 +1448,9 @@ window.app = {
                         <p class="text-6xl font-black text-yellow-400 drop-shadow-md">+${xpGained}</p>
                     </div>
                 </div>
-                <button onclick="app.continueAfterSession()" class="w-full py-6 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-[2rem] shadow-[0_8px_0_0_#1e3a8a] active:translate-y-2 text-2xl uppercase tracking-widest transition-all">Continue</button>
+                <button onclick="app.goBack()" class="w-full py-6 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-[2rem] shadow-[0_8px_0_0_#1e3a8a] active:translate-y-2 text-2xl uppercase tracking-widest transition-all">Continue</button>
             </div>
         `;
-        this.sessionCompletionTimer = setTimeout(() => {
-            if (document.getElementById('session-completion-screen')) this.continueAfterSession();
-        }, 1800);
     },
 
     // --- Analytics & Detailed Historical Review ---
@@ -1983,3 +1978,15 @@ window.app = {
         container.innerHTML = html;
     }
 };
+
+document.addEventListener('paste', (event) => {
+    const hasImage = Array.from(event.clipboardData?.items || [])
+        .some(item => item.type.startsWith('image/'));
+    if (!hasImage) return;
+
+    const modal = document.getElementById('modal-container');
+    if (!modal || modal.classList.contains('hidden') || !document.getElementById('img-preview')) return;
+
+    event.preventDefault();
+    window.app.handleImageUpload(event);
+});
