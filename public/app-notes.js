@@ -381,6 +381,9 @@
             const bg = this.getNoteBackground(stData, page);
             const textColor = this.getNoteTextColor(stData, page);
             const size = getStoredSize();
+            const pageSizePreset = Object.keys(PAGE_SIZES).find(name =>
+                PAGE_SIZES[name].width === dimensions.width && PAGE_SIZES[name].height === dimensions.height
+            ) || "Custom";
             let html = '<div class="max-w-7xl mx-auto notes-view notes-editor-view">' +
                 '<div class="notes-editor-header"><div><p class="notes-eyebrow">NOTES PAGE EDITOR</p><h1>' + this.escapeHTML(stData.subtopic.name) + '</h1>' +
                 '<p class="notes-muted">Use Type to write, Draw to sketch, and Erase to remove strokes.</p></div>' +
@@ -392,7 +395,7 @@
                 '<button id="note-tool-erase" class="notes-tool-button" aria-pressed="false" onclick="app.setNoteTool(\'erase\')">⌫ Erase strokes</button></div>' +
                 '<label class="notes-tool-field">Text / pen colour<input id="note-ink-color" type="color" value="' + textColor + '" oninput="app.updateNoteInkColor(this.value)"></label>' +
                 '<label class="notes-tool-field">Brush size<input type="range" min="2" max="28" value="5" oninput="app.setNoteBrushSize(this.value)"></label>' +
-                '<label class="notes-tool-field">Page size<select id="note-current-size" onchange="app.resizeCurrentNotePage(this.value)">' + this.notePageSizeOptions(size.preset) + '</select></label>' +
+                '<label class="notes-tool-field">Page size<select id="note-current-size" onchange="app.resizeCurrentNotePage(this.value)">' + this.notePageSizeOptions(pageSizePreset) + '</select></label>' +
                 '<p class="notes-tool-hint">The size menu changes this page and the default for new pages.</p>' +
                 '<div class="notes-background-tools"><span class="notes-tool-label">Page background</span>' +
                 '<label class="notes-tool-field">Apply to<select id="notes-bg-scope" onchange="app.syncNoteBackgroundControls(this.value)">' +
