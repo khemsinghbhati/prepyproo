@@ -1,6 +1,6 @@
 # PrepPro — How to Test Locally on Windows
 
-Follow these steps in order to run a PrepPro branch locally. Firebase Authentication and Firestore use local emulators on localhost. IndexedDB stores a local copy in each browser; Firestore syncs data between test browsers signed in with the same emulator account. All emulator data is separate from production data.
+Follow these steps in order to run a PrepPro branch locally. Firebase Authentication and Firestore use local emulators on localhost. IndexedDB stores a local copy in each browser; Firestore syncs data between test browsers signed in with the same emulator account. The Firestore emulator loads the owner-only rules from `firestore.rules`. All emulator data is separate from production data.
 
 > [!IMPORTANT]
 > For local testing, always use the `demo-prepyproo` project ID and the local URL `http://127.0.0.1:5000`. Do **not** run `firebase deploy` as part of this workflow.
@@ -148,9 +148,11 @@ Your production account data is **not** automatically imported into the emulator
 4. Test erasing, clearing all strokes, uploading an image page, custom background images, background scopes, resizing, page insertion, reordering, deletion, and Learner Mode reading.
 5. Close/reopen the browser and sign back in with the same account; data should still be present locally.
 6. Open PrepPro in two separate browser profiles using the **same test account in the Auth emulator**. Make a change in one window, wait for the save status to report that it synced, and verify the other window receives it automatically. Then edit in the second window and check that the first receives the change. No codes or file transfer should be required.
-7. Disconnect one browser from the network, make a change, reconnect, and verify the local save syncs when the connection returns.
-8. Verify **Export data** and **Import data** still work as manual backup/recovery tools. Import replaces the destination's local workspace.
-9. Verify existing Flashcards, Quizzes, Analytics, and XP still work.
+7. Create a test dataset whose serialized JSON is larger than 1 MiB (for example, a large set of text-only questions/flashcards), then save it. In browser DevTools or the Firestore Emulator UI, verify the user document contains only the small manifest and that snapshot chunks are separate documents under `users/{uid}/syncSnapshots/{snapshotId}/chunks/`.
+8. Verify the save status reports that syncing completed, and that the second browser receives the data only after the chunk transfer completes. Also verify reloading during an interrupted upload never applies a partial snapshot.
+9. Disconnect one browser from the network, make a change, reconnect, and verify the local save syncs when the connection returns.
+10. Verify **Export data** and **Import data** still work as manual backup/recovery tools. Import replaces the destination's local workspace.
+11. Verify existing Flashcards, Quizzes, Analytics, and XP still work.
 
 ## Step 11 — Stop the local application when finished
 
