@@ -28,8 +28,8 @@ const auth = getAuth(firebaseApp);
 if (useFirebaseEmulators) connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
 
 // Firestore is the cloud sync layer; IndexedDB remains the local cache/offline copy.
-const legacyDb = getFirestore(firebaseApp);
-if (useFirebaseEmulators) connectFirestoreEmulator(legacyDb, "127.0.0.1", 8080);
+const db = getFirestore(firebaseApp);
+if (useFirebaseEmulators) connectFirestoreEmulator(db, "127.0.0.1", 8080);
 
 const provider = new GoogleAuthProvider();
 let currentUser = null;
@@ -65,12 +65,8 @@ const DEFAULT_DATA = { subjects: [], xp: 0 };
 const LOCAL_DB_NAME = "preppro-local-data";
 const LOCAL_DB_VERSION = 1;
 const LOCAL_STORE_NAME = "users";
-const LEGACY_MIGRATION_MARKER = "_prepProLocalOnlyMigrationAt";
-const OLD_LOCAL_KEY = (uid) => `prepProData_v12_${uid}`;
-const OLD_PENDING_KEY = (uid) => `prepProPending_v1_${uid}`;
 const copyDefaultData = () => structuredClone(DEFAULT_DATA);
-const legacyUserDocument = (uid) => doc(legacyDb, "users", uid);
-const cloudManifestDocument = (uid) => doc(legacyDb, "users", uid, "syncState", "current");
+const cloudManifestDocument = (uid) => doc(db, "users", uid, "syncState", "current");
 
 function setStatus(message) {
     const element = document.getElementById("auth-status");
@@ -113,7 +109,6 @@ function extractCloudUserData(value) {
     delete clean[CLOUD_TOTAL_BYTES_FIELD];
     delete clean[CLOUD_SHA256_FIELD];
     delete clean[CLOUD_SNAPSHOT_HISTORY_FIELD];
-    delete clean[LEGACY_MIGRATION_MARKER];
     return clean;
 }
 
@@ -179,22 +174,18 @@ async function sha256Hex(bytes) {
 }
 
 function cloudSnapshotParent(uid, snapshotId) {
-    return doc(legacyDb, "users", uid, CLOUD_SNAPSHOT_COLLECTION, snapshotId);
+    return doc(db, "users", uid, CLOUD_SNAPSHOT_COLLECTION, snapshotId);
 }
 
 function cloudSnapshotChunk(uid, snapshotId, index) {
     const chunkId = String(index).padStart(8, "0");
-    return doc(legacyDb, "users", uid, CLOUD_SNAPSHOT_COLLECTION, snapshotId, CLOUD_CHUNK_COLLECTION, chunkId);
+    return doc(db, "users", uid, CLOUD_SNAPSHOT_COLLECTION, snapshotId, CLOUD_CHUNK_COLLECTION, chunkId);
 }
 
 async function readCloudUserData(uid, cloudDocument) {
     if (!cloudDocument || typeof cloudDocument !== "object") return null;
-    const cloudSchemaVersion = Number(cloudDocument[CLOUD_SCHEMA_FIELD] || 0);
-    if (cloudSchemaVersion >= 2 && !isChunkedCloudManifest(cloudDocument)) {
-        throw new Error("The cloud snapshot manifest is malformed. The local copy was kept.");
-    }
     if (!isChunkedCloudManifest(cloudDocument)) {
-        return extractCloudUserData(cloudDocument);
+        throw new Error("The cloud sync manifest is invalid. The local copy was kept.");
     }
 
     const snapshotId = cloudDocument[CLOUD_SNAPSHOT_ID_FIELD];
@@ -276,7 +267,7 @@ async function readCloudUserData(uid, cloudDocument) {
 async function cleanupCloudSnapshot(uid, snapshotId) {
     if (!snapshotId || !currentUser || currentUser.uid !== uid) return;
     try {
-        const chunksRef = collection(legacyDb, "users", uid, CLOUD_SNAPSHOT_COLLECTION, snapshotId, CLOUD_CHUNK_COLLECTION);
+        const chunksRef = collection(db, "users", uid, CLOUD_SNAPSHOT_COLLECTION, snapshotId, CLOUD_CHUNK_COLLECTION);
         let cursor = null;
         while (true) {
             const pageQuery = cursor
@@ -309,19 +300,19 @@ async function writeCloudUserSnapshot(uid, userData) {
     const rootRef = cloudManifestDocument(uid);
     const parentRef = cloudSnapshotParent(uid, snapshotId);
 
-    let previousRoot = null;
+    let previousManifest = null;
     try {
         const previousSnapshot = await getDoc(rootRef);
-        if (previousSnapshot.exists()) previousRoot = previousSnapshot.data();
+        if (previousSnapshot.exists()) previousManifest = previousSnapshot.data();
     } catch (error) {
         throw new Error("Could not read the current cloud manifest before syncing: " + (error.message || "network error"));
     }
 
-    const previousIds = Array.isArray(previousRoot?.[CLOUD_SNAPSHOT_HISTORY_FIELD])
-        ? previousRoot[CLOUD_SNAPSHOT_HISTORY_FIELD].filter(id => typeof id === "string")
+    const previousIds = Array.isArray(previousManifest?.[CLOUD_SNAPSHOT_HISTORY_FIELD])
+        ? previousManifest[CLOUD_SNAPSHOT_HISTORY_FIELD].filter(id => typeof id === "string")
         : [];
-    const previousCurrentId = isChunkedCloudManifest(previousRoot)
-        ? previousRoot[CLOUD_SNAPSHOT_ID_FIELD]
+    const previousCurrentId = isChunkedCloudManifest(previousManifest)
+        ? previousManifest[CLOUD_SNAPSHOT_ID_FIELD]
         : null;
     const oldHistory = [...new Set([previousCurrentId, ...previousIds].filter(id => id && id !== snapshotId))];
     const nextHistory = [snapshotId, ...oldHistory].slice(0, 3);
@@ -363,8 +354,7 @@ async function writeCloudUserSnapshot(uid, userData) {
             [CLOUD_TOTAL_BYTES_FIELD]: bytes.byteLength,
             [CLOUD_SHA256_FIELD]: sha256,
             [CLOUD_SNAPSHOT_HISTORY_FIELD]: nextHistory,
-            [CLOUD_UPDATED_AT_FIELD]: serverTimestamp(),
-            [LEGACY_MIGRATION_MARKER]: previousRoot?.[LEGACY_MIGRATION_MARKER] || new Date().toISOString()
+            [CLOUD_UPDATED_AT_FIELD]: serverTimestamp()
         });
 
     } catch (error) {
@@ -372,28 +362,11 @@ async function writeCloudUserSnapshot(uid, userData) {
         throw error;
     }
 
-    // All accounts keep the same Firebase Auth UID. The previous version stored
-    // its payload directly at users/{uid}; remove that legacy root document only
-    // after the new chunked snapshot and manifest are fully committed.
-    let legacyCleanupFailed = false;
-    if (currentUser?.uid === uid) {
-        try {
-            await deleteDoc(legacyUserDocument(uid));
-        } catch (error) {
-            legacyCleanupFailed = true;
-            console.warn("The new cloud snapshot is active, but the old test-account document could not be removed:", error);
-        }
-    } else {
-        legacyCleanupFailed = true;
-    }
-
-    // Retain the latest three generations so readers already downloading an older
+    // Retain the latest three generations so readers already downloading an earlier
     // snapshot are unlikely to lose their chunks during a newer upload.
     for (const obsoleteId of obsoleteSnapshots) {
         cleanupCloudSnapshot(uid, obsoleteId);
     }
-
-    return { legacyCleanupFailed };
 }
 
 function openLocalDatabase() {
@@ -566,12 +539,10 @@ async function flushCloudSync() {
     cloudWriteInProgress = true;
     let failed = false;
     try {
-        const syncResult = await writeCloudUserSnapshot(item.uid, item.data);
+        await writeCloudUserSnapshot(item.uid, item.data);
         if (currentUser?.uid === item.uid && !queuedCloudWrite &&
             latestLocalSaveAt <= item.localUpdatedAt) {
-            setSaveStatus(syncResult?.legacyCleanupFailed
-                ? "Synced new cloud data · old test record could not be removed"
-                : "Saved & synced across devices");
+            setSaveStatus("Saved & synced across devices");
         }
     } catch (error) {
         failed = true;
@@ -605,7 +576,7 @@ async function tryApplyPendingCloudRemote() {
         ? window.app.normalizeData(structuredClone(data))
         : structuredClone(data);
 
-    if (!pending.legacyRemote && !sameUserData(localData, pending.data) &&
+    if (!sameUserData(localData, pending.data) &&
         latestLocalSaveAt > pending.updatedAt && hasUserContent(localData)) {
         pendingCloudRemote = null;
         scheduleCloudSync(currentUser.uid, localData, 120);
@@ -698,8 +669,7 @@ function startCloudSync(uid) {
         cloudBaselineKnown = true;
         if (remoteIsNewer) {
             pendingCloudRemote = {
-                uid, data: remoteData, updatedAt: remoteUpdatedAt,
-                legacyRemote: !remoteUpdatedAt && !isInitialAuthoritativeSnapshot
+                uid, data: remoteData, updatedAt: remoteUpdatedAt
             };
             if (canApplyRemoteDataNow()) {
                 await tryApplyPendingCloudRemote();
@@ -794,49 +764,19 @@ window.importPrepProData = async function (event) {
     }
 };
 
-function readPreviousLocalSnapshot(uid) {
-    // Upgrade path for the previous release's localStorage cache/pending queue.
-    // A pending snapshot is the most recent unsynced version and takes precedence.
-    for (const key of [OLD_PENDING_KEY(uid), OLD_LOCAL_KEY(uid)]) {
-        try {
-            const raw = localStorage.getItem(key);
-            if (!raw) continue;
-            const parsed = JSON.parse(raw);
-            const candidate = key === OLD_PENDING_KEY(uid) ? parsed?.data : parsed;
-            if (isValidData(candidate)) return candidate;
-        } catch (error) {
-            console.warn("Could not migrate previous local cache:", error);
-        }
-    }
-    return null;
-}
-
 async function loadUserData(user) {
     const uid = user.uid;
     loadNotice = "";
     let localRecord = await readLocalUserData(uid);
     let localData = localRecord?.data || null;
 
-    // Upgrade any localStorage-era copy before comparing it with the cloud.
-    if (!localData) {
-        const previousLocalSnapshot = readPreviousLocalSnapshot(uid);
-        if (previousLocalSnapshot) {
-            localRecord = await writeLocalUserData(uid, previousLocalSnapshot);
-            localData = localRecord.data;
-        }
-    }
-
     let cloudSnapshot = null;
     let cloudReadFailed = false;
     let cloudReadError = null;
     try {
-        // Prefer the new snapshot manifest. If it does not exist yet, read the
-        // same account's old root document and migrate its data to the chunked model
-        // on the first successful sync.
-        const manifestSnapshot = await getDoc(cloudManifestDocument(uid));
-        cloudSnapshot = manifestSnapshot.exists()
-            ? manifestSnapshot
-            : await getDoc(legacyUserDocument(uid));
+        // The current sync manifest is the single cloud entry point for every account.
+        // If it does not exist, the local workspace can initialize it after sign-in.
+        cloudSnapshot = await getDoc(cloudManifestDocument(uid));
     } catch (error) {
         cloudReadFailed = true;
         cloudReadError = error;
