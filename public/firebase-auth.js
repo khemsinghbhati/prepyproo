@@ -343,7 +343,7 @@ async function loadUserData(user) {
     if (previousLocalSnapshot) {
         await writeLocalUserData(uid, previousLocalSnapshot);
         await markLegacyMigrated(uid);
-        loadNotice = "Your previous local data was migrated to this browser. Export it to transfer it to other devices.";
+        loadNotice = "Your previous local data was migrated. Use Send to device / Receive from device or export a JSON backup to move it.";
         return previousLocalSnapshot;
     }
 
@@ -355,7 +355,7 @@ async function loadUserData(user) {
         if (snapshot.exists()) {
             const legacyData = snapshot.data();
             if (legacyData[LEGACY_MIGRATION_MARKER]) {
-                loadNotice = "No local copy on this device. Import an export from your other device.";
+                loadNotice = "No local copy exists on this device. Use Receive from device while your other signed-in device is online.";
                 const initialData = copyDefaultData();
                 await writeLocalUserData(uid, initialData);
                 return initialData;
@@ -367,7 +367,7 @@ async function loadUserData(user) {
             }
             await writeLocalUserData(uid, cleanLegacyData);
             await markLegacyMigrated(uid);
-            loadNotice = "Your old cloud data was migrated to this browser. Export it to transfer it to other devices.";
+            loadNotice = "Your old cloud data was migrated to this browser. Use Send to device / Receive from device to move the latest local data.";
             return cleanLegacyData;
         }
     } catch (error) {
@@ -379,7 +379,7 @@ async function loadUserData(user) {
 
     const initialData = copyDefaultData();
     await writeLocalUserData(uid, initialData);
-    loadNotice = "New local workspace created. Export/import transfers data between devices.";
+    loadNotice = "New local workspace created. Use Receive from device to transfer data from another signed-in device.";
     return initialData;
 }
 
