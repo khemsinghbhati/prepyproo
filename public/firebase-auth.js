@@ -42,6 +42,7 @@ let cloudWriteInProgress = false;
 let queuedCloudWrite = null;
 let pendingCloudRemote = null;
 let lastAppliedCloudAt = 0;
+let cloudBaselineKnown = false;
 let receivedInitialCloudSnapshot = false;
 let remoteApplyInProgress = false;
 
@@ -364,7 +365,6 @@ async function tryApplyPendingCloudRemote() {
 function startCloudSync(uid) {
     if (cloudUnsubscribe) cloudUnsubscribe();
     cloudUnsubscribe = null;
-    lastAppliedCloudAt = 0;
     receivedInitialCloudSnapshot = false;
     pendingCloudRemote = null;
 
@@ -406,7 +406,7 @@ function startCloudSync(uid) {
         if (queuedCloudWrite || cloudSyncTimer || cloudWriteInProgress) return;
 
         const remoteIsNewer = (hasUserContent(remoteData) && !hasUserContent(localData)) ||
-            (remoteUpdatedAt > (latestLocalSaveAt || 0)) ||
+            (remoteUpdatedAt > (cloudBaselineKnown ? lastAppliedCloudAt : (latestLocalSaveAt || 0))) ||
             (!remoteUpdatedAt && !isInitialAuthoritativeSnapshot);
         if (remoteIsNewer) {
             pendingCloudRemote = {
@@ -556,6 +556,8 @@ async function loadUserData(user) {
     if (remoteData && window.app?.normalizeData) {
         remoteData = window.app.normalizeData(structuredClone(remoteData));
     }
+    cloudBaselineKnown = !cloudReadFailed && !cloudIsCached;
+    if (cloudBaselineKnown) lastAppliedCloudAt = remoteUpdatedAt;
 
     if (localData) {
         latestLocalSaveAt = Number(localRecord?.updatedAt || Date.now());
@@ -661,6 +663,8 @@ window.addEventListener("offline", () => {
 
 onAuthStateChanged(auth, async (user) => {
     const requestId = ++authRequestId;
+    cloudBaselineKnown = false;
+    lastAppliedCloudAt = 0;
     if (cloudUnsubscribe) cloudUnsubscribe();
     cloudUnsubscribe = null;
     pendingCloudRemote = null;
