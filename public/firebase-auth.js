@@ -70,6 +70,7 @@ const OLD_LOCAL_KEY = (uid) => `prepProData_v12_${uid}`;
 const OLD_PENDING_KEY = (uid) => `prepProPending_v1_${uid}`;
 const copyDefaultData = () => structuredClone(DEFAULT_DATA);
 const legacyUserDocument = (uid) => doc(legacyDb, "users", uid);
+const cloudManifestDocument = (uid) => doc(legacyDb, "users", uid, "syncState", "current");
 
 function setStatus(message) {
     const element = document.getElementById("auth-status");
@@ -296,7 +297,7 @@ async function writeCloudUserSnapshot(uid, userData) {
         : Date.now().toString(36) + Math.random().toString(36).slice(2));
     const chunkCount = Math.ceil(bytes.byteLength / CLOUD_CHUNK_RAW_BYTES);
     const sha256 = await sha256Hex(bytes);
-    const rootRef = legacyUserDocument(uid);
+    const rootRef = cloudManifestDocument(uid);
     const parentRef = cloudSnapshotParent(uid, snapshotId);
 
     let previousRoot = null;
@@ -611,7 +612,7 @@ function startCloudSync(uid) {
     receivedInitialCloudSnapshot = false;
     pendingCloudRemote = null;
 
-    cloudUnsubscribe = onSnapshot(legacyUserDocument(uid), { includeMetadataChanges: true }, async snapshot => {
+    cloudUnsubscribe = onSnapshot(cloudManifestDocument(uid), { includeMetadataChanges: true }, async snapshot => {
         if (!currentUser || currentUser.uid !== uid || snapshot.metadata.fromCache ||
             snapshot.metadata.hasPendingWrites) return;
         const readSerial = ++cloudSnapshotReadSerial;
@@ -803,7 +804,12 @@ async function loadUserData(user) {
     let cloudSnapshot = null;
     let cloudReadFailed = false;
     try {
-        cloudSnapshot = await getDoc(legacyUserDocument(uid));
+        // New sync manifests live separately from the legacy root user document, so
+        // a preview/new client does not overwrite data used by the currently live app.
+        const manifestSnapshot = await getDoc(cloudManifestDocument(uid));
+        cloudSnapshot = manifestSnapshot.exists()
+            ? manifestSnapshot
+            : await getDoc(legacyUserDocument(uid));
     } catch (error) {
         cloudReadFailed = true;
         console.warn("Cloud data could not be checked; the local copy will remain usable:", error);
@@ -882,7 +888,10 @@ async function loadUserData(user) {
         return remoteData;
     }
 
-    if (cloudReadFailed && cloudExists) {
+    if (cloudReadFailed && !localData) {
+        throw new Error("PrepPro could not check its saved cloud data. No blank workspace was created. Check the connection and Firestore access, then reload.");
+    }
+    if (cloudReadFailed && cloudExists && !localData) {
         throw new Error("The saved cloud snapshot could not be downloaded completely. No blank workspace was created. Check the connection and Firestore access, then reload.");
     }
 
