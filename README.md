@@ -41,7 +41,7 @@ PrepPro is a serverless, single-page learning app that helps students organize s
 ### Cloud and account integration
 
 - **Authentication:** Firebase Authentication with Google sign-in, as configured for the deployed app.
-- **Automatic cross-device sync:** Study content, attempt history, and Notes metadata are saved locally in IndexedDB and synced through Firestore when online. Sign in with the same account on each device; no transfer codes are needed.
+- **Automatic cross-device sync:** Study content, attempt history, and Notes metadata are saved locally in IndexedDB and synced through Firestore when online. Large snapshots are transferred in windows of small chunks; Firestore's user document stores only a compact manifest, keeping the snapshot below the per-document size limit. Sign in with the same account on each device; no transfer codes are needed.
 - **Offline use:** Local saves continue in IndexedDB without an internet connection and sync when connectivity returns.
 - **Backups:** Export/Import data remains available for a manual JSON backup or recovery; importing replaces the current local workspace.
 - **Hosting:** The live app is hosted on Firebase Hosting.
@@ -54,7 +54,7 @@ PrepPro is a serverless, single-page learning app that helps students organize s
 | Styling | Tailwind CSS via CDN |
 | Icons | Phosphor Icons |
 | Authentication | Firebase Authentication |
-| Data persistence | IndexedDB local cache plus Firestore cloud sync |
+| Data persistence | IndexedDB local cache plus windowed Firestore snapshot sync |
 | Image hosting | ImgBB uploads and HTTP/HTTPS image URLs |
 | Deployment | Firebase Hosting |
 
@@ -117,12 +117,12 @@ Localhost automatically uses a separate demo Firebase project with the Auth and 
 
 ### Important notes
 
-- The local app uses the Auth emulator on port **9099** and Firestore emulator on port **8080**. Firestore is required to test automatic cross-device sync locally; these ports are configured in `firebase.json`.
-- Data saves locally first and syncs to Firestore when online. Sign in with the same PrepPro account on another browser/device to receive updates automatically. **Export data** and **Import data** are retained as manual backup/recovery tools; importing replaces the destination's local data.
+- The local app uses the Auth emulator on port **9099** and Firestore emulator on port **8080**. Firestore is required to test automatic cross-device sync locally; these ports are configured in `firebase.json`. The configured `firestore.rules` file permits each signed-in user to read and write only their own user document and its sync snapshot/chunk subcollections.
+- Data saves locally first, then uploads snapshot chunks in windows of four documents. Each chunk is about 300 KiB before Base64 encoding (roughly 400 KiB in Firestore), and the manifest is published only after every chunk is uploaded. Receiving devices download four chunks at a time, verify the complete snapshot's size and SHA-256 hash, and only then apply it. The current implementation caps an individual snapshot at 100 MiB. **Export data** and **Import data** are retained as manual backup/recovery tools; importing replaces the destination's local data.
 - Local sign-in is simulated by the Auth emulator; it does not authenticate against the production Google sign-in service.
 - The `demo-prepyproo` project ID keeps emulator traffic separate from the real `prepyproo` Firebase project. Do not replace it with the production project ID when running local tests.
 - Emulator data is for testing only. It is separate from production data and may be lost when emulators stop unless you configure emulator data export/import.
-- This repository currently has no local Firestore rules file configured, so the Firestore emulator defaults to allowing all reads and writes. This is only for the local demo project; it does **not** test your production security rules. Add the same reviewed rules used by production before relying on local tests for security validation.
+- The repository now includes `firestore.rules`, and `firebase.json` configures the emulator to use it. Production Firestore rules are deployed separately from Hosting; review and merge these owner-only rules with any existing production rules before deploying them with `firebase deploy --only firestore:rules`. Do not deploy them blindly if your project has other collections/rules that need to be retained.
 - When the app is opened on a non-localhost domain, it uses the existing production Firebase configuration. Do not use a production-hosted deployment for testing destructive actions.
 
 ## 📄 License
