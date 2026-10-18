@@ -71,21 +71,18 @@ const storedManifestDocument = (uid) => doc(db, "users", uid, "syncState", "curr
 
 async function getCurrentCloudManifest(uid) {
     const rootRef = cloudManifestDocument(uid);
+    const rootSnapshot = await getDoc(rootRef);
+    if (rootSnapshot.exists()) return rootSnapshot;
+
     const storedManifestRef = storedManifestDocument(uid);
 
-    // Keep current cloud data intact while making the account root the manifest.
-    // Snapshot chunks stay in place; only the small manifest document moves.
+    // If the manifest has not been placed on the account root yet, preserve the
+    // active snapshot by relocating its small manifest; snapshot chunks stay put.
     await runTransaction(db, async transaction => {
-        const rootSnapshot = await transaction.get(rootRef);
+        const currentRoot = await transaction.get(rootRef);
+        if (currentRoot.exists()) return;
+
         const storedManifestSnapshot = await transaction.get(storedManifestRef);
-
-        if (rootSnapshot.exists()) {
-            if (isChunkedCloudManifest(rootSnapshot.data()) && storedManifestSnapshot.exists()) {
-                transaction.delete(storedManifestRef);
-            }
-            return;
-        }
-
         if (!storedManifestSnapshot.exists()) return;
 
         const manifest = storedManifestSnapshot.data();
