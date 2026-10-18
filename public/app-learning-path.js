@@ -131,7 +131,7 @@ Object.assign(window.app, {
         const subj = data.subjects.find(s => s.id === subjectId);
         const topic = subj?.topics.find(t => t.id === topicId);
         if(topic) {
-            topic.subtopics.push({ id: generateId(), name, isCompleted: false, flashcards: [], questionSets: [], flashcardRevisions: 0 });
+            topic.subtopics.push({ id: generateId(), name, isCompleted: false, flashcards: [], questionSets: [], notes: [], flashcardRevisions: 0 });
             this.save(); this.setView('dashboard');
         }
     },
@@ -234,6 +234,7 @@ Object.assign(window.app, {
                     </div>
                     <i class="ph-bold ph-caret-right text-slate-500 group-hover:text-blue-400 text-xl"></i>
                 </button>
+                ${st.notes && st.notes.length > 0 ? '<button onclick="app.openNotes()" class="w-full flex items-center justify-between p-4 bg-slate-800 border border-slate-700 rounded-xl hover:border-violet-500/50 transition-all group mb-6"><div class="flex items-center gap-4"><div class="w-10 h-10 rounded-lg bg-violet-500/10 text-violet-300 flex items-center justify-center border border-violet-500/20"><i class="ph-bold ph-notebook text-xl"></i></div><div class="text-left"><p class="font-black text-slate-200 text-base">Read Notes</p><p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">' + st.notes.length + ' pages</p></div></div><i class="ph-bold ph-caret-right text-slate-600 group-hover:text-violet-300"></i></button>' : ''}
                 <h4 class="text-[10px] font-black text-slate-500 uppercase mb-3 ml-1 tracking-widest">Question Sets</h4>
             `;
 
@@ -505,7 +506,7 @@ Object.assign(window.app, {
 
                 topic.subtopics.forEach(st => {
                     let isStComplete = !!st.isCompleted;
-                    const hasContent = st.flashcards.length > 0 || st.questionSets.some(s => s.questions.length > 0);
+                    const hasContent = st.flashcards.length > 0 || st.questionSets.some(s => s.questions.length > 0) || st.notes.length > 0;
                     
                     let cardStyle = "bg-slate-900 border-slate-700 hover:border-blue-500 hover:shadow-[0_0_25px_rgba(59,130,246,0.15)]";
                     if (!isEditMode && isStComplete) {
