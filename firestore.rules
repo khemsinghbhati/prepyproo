@@ -6,8 +6,8 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
-    // The user's root document stores only a small snapshot manifest.
-    // Snapshot metadata and payload chunks live in these nested collections.
+    // Keep the legacy user document accessible to its owner for compatibility.
+    // New client sync metadata and payload chunks live in separate nested collections.
     match /users/{userId} {
       allow read, write: if isSignedInOwner(userId);
 
