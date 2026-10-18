@@ -432,7 +432,7 @@
                 '<div class="notes-heading-actions"><button class="notes-button notes-button-secondary" onclick="app.returnToNotesManager()">Cancel / Back</button>' +
                 '<button class="notes-button notes-button-primary" onclick="app.saveNotePage()">Confirm & Save Page</button></div></div>' +
                 '<div class="notes-editor-layout"><aside class="notes-toolbar">' +
-                '<div class="notes-tool-group"><span class="notes-tool-label">Tools</span><button id="note-tool-text" class="notes-tool-button" aria-pressed="false" onclick="app.setNoteTool(\'text-place\')">T&nbsp; Add text</button>' +
+                '<div class="notes-tool-group"><span class="notes-tool-label">Tools</span><button id="note-tool-text" class="notes-tool-button" aria-pressed="false" onclick="app.setNoteTool(\'text\')">T&nbsp; Add text</button>' +
                 '<button id="note-tool-draw" class="notes-tool-button is-active" aria-pressed="true" onclick="app.setNoteTool(\'draw\')">✎ Draw</button>' +
                 '<button id="note-tool-erase" class="notes-tool-button" aria-pressed="false" onclick="app.setNoteTool(\'erase\')">⌫ Erase strokes</button></div>' +
                 '<label class="notes-tool-field">Pen / selected text colour<input id="note-ink-color" type="color" value="' + textColor + '" oninput="app.updateNoteInkColor(this.value)"></label>' +
@@ -683,7 +683,7 @@
             if (!canvas || !confirm("Clear all pen strokes on this page? Typed text will stay.")) return;
             canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
             // Upload the cleared transparent layer at confirmation to replace any saved strokes.
-            if (this.noteDraft) this.noteDraft.hasInk = true;
+            if (this.noteDraft) this.noteDraft.inkChanged = true;
         },
 
         getCurrentNotePage() {
@@ -789,7 +789,7 @@
             if (this.noteDraft) {
                 this.noteDraft.width = nextWidth;
                 this.noteDraft.height = nextHeight;
-                this.noteDraft.hasInk = true;
+                this.noteDraft.inkChanged = true;
             }
             data.noteSettings.pageSize = { preset: preset, width: nextWidth, height: nextHeight };
             this.save();
