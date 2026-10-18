@@ -1,0 +1,23 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedInOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // The user's root document stores only a small snapshot manifest.
+    // Snapshot metadata and payload chunks live in these nested collections.
+    match /users/{userId} {
+      allow read, write: if isSignedInOwner(userId);
+
+      match /syncSnapshots/{snapshotId} {
+        allow read, write: if isSignedInOwner(userId);
+
+        match /chunks/{chunkId} {
+          allow read, write: if isSignedInOwner(userId);
+        }
+      }
+    }
+  }
+}
