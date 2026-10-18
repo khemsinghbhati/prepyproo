@@ -7,7 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import {
     getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, serverTimestamp,
-    collection, getDocs, deleteDoc, query, orderBy, startAfter, limit, runTransaction
+    collection, getDocs, deleteDoc, query, orderBy, startAfter, limit
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -67,35 +67,6 @@ const LOCAL_DB_VERSION = 1;
 const LOCAL_STORE_NAME = "users";
 const copyDefaultData = () => structuredClone(DEFAULT_DATA);
 const cloudManifestDocument = (uid) => doc(db, "users", uid);
-const storedManifestDocument = (uid) => doc(db, "users", uid, "syncState", "current");
-
-async function getCurrentCloudManifest(uid) {
-    const rootRef = cloudManifestDocument(uid);
-    const rootSnapshot = await getDoc(rootRef);
-    if (rootSnapshot.exists()) return rootSnapshot;
-
-    const storedManifestRef = storedManifestDocument(uid);
-
-    // If the manifest has not been placed on the account root yet, preserve the
-    // active snapshot by relocating its small manifest; snapshot chunks stay put.
-    await runTransaction(db, async transaction => {
-        const currentRoot = await transaction.get(rootRef);
-        if (currentRoot.exists()) return;
-
-        const storedManifestSnapshot = await transaction.get(storedManifestRef);
-        if (!storedManifestSnapshot.exists()) return;
-
-        const manifest = storedManifestSnapshot.data();
-        if (!isChunkedCloudManifest(manifest)) {
-            throw new Error("The cloud sync manifest is invalid. Your local copy was kept.");
-        }
-
-        transaction.set(rootRef, manifest);
-        transaction.delete(storedManifestRef);
-    });
-
-    return getDoc(rootRef);
-}
 
 function setStatus(message) {
     const element = document.getElementById("auth-status");
@@ -331,7 +302,7 @@ async function writeCloudUserSnapshot(uid, userData) {
 
     let previousManifest = null;
     try {
-        const previousSnapshot = await getCurrentCloudManifest(uid);
+        const previousSnapshot = await getDoc(rootRef);
         if (previousSnapshot.exists()) previousManifest = previousSnapshot.data();
     } catch (error) {
         throw new Error("Could not read the current cloud manifest before syncing: " + (error.message || "network error"));
@@ -805,7 +776,7 @@ async function loadUserData(user) {
     try {
         // The account root document is the single cloud manifest for every account.
         // This preserves the active snapshot while relocating its manifest if necessary.
-        cloudSnapshot = await getCurrentCloudManifest(uid);
+        cloudSnapshot = await getDoc(cloudManifestDocument(uid));
     } catch (error) {
         cloudReadFailed = true;
         cloudReadError = error;
@@ -888,7 +859,7 @@ async function loadUserData(user) {
 
     if (cloudReadFailed && !localData) {
         if (cloudReadError?.code === "permission-denied" || cloudReadError?.code === "firestore/permission-denied") {
-            throw new Error("Firestore denied access to this account's saved data. The deployed Firestore rules may not yet allow PrepPro's new sync paths (users/{uid}/syncState and users/{uid}/syncSnapshots). Update the existing rules safely, then sign in again. No blank workspace was created.");
+            throw new Error("Firestore denied access to this account's saved data. Check that the deployed Firestore rules allow this signed-in user to read their users/{uid} manifest and syncSnapshots chunks. No blank workspace was created.");
         }
         if (cloudReadError?.code === "unauthenticated" || cloudReadError?.code === "firestore/unauthenticated") {
             throw new Error("Firestore did not recognize the active sign-in. Sign out, sign in again, and retry. No blank workspace was created.");
