@@ -372,10 +372,9 @@ async function loadUserData(user) {
         }
     } catch (error) {
         console.error("Legacy data migration could not be checked:", error);
-        const initialData = copyDefaultData();
-        await writeLocalUserData(uid, initialData);
-        loadNotice = "A new local workspace was created, but the old cloud backup could not be checked. If you had previous data, restore it from an export or retry migration before making new changes.";
-        return initialData;
+        // Do not create a blank local record here: doing so could hide older data
+        // that still needs to be migrated once Firestore is reachable.
+        throw new Error("Could not check for previous saved data. Connect to the internet and retry so older content can be migrated safely.");
     }
 
     const initialData = copyDefaultData();
