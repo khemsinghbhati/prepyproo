@@ -6,9 +6,8 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
 
-    // Existing accounts may have data in this root document from the previous app.
-    // The new client migrates that data to chunked snapshots, then deletes the root data.
-    // All paths still belong to the same authenticated UID; the nested collections are storage only.
+    // Each signed-in user can access only their own account and sync data.
+    // The manifest and snapshot chunks are subcollections under the same account UID.
     match /users/{userId} {
       allow read, write: if isSignedInOwner(userId);
 
