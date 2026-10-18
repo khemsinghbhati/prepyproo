@@ -618,6 +618,220 @@ window.completePrepProDeviceSend = async function () {
     }
 };
 
+window.startPrepProDeviceReceive = function () {
+    if (!currentUser) return showToast("Sign in before receiving data.", "error");
+    const html =
+        '<div class="space-y-4">' +
+        '<p class="text-sm text-slate-300 leading-relaxed">Keep this device online. On the source device, choose <strong>Send to device</strong> and paste the offer code below. This transfer goes directly between browsers; both devices must stay open until it finishes.</p>' +
+        '<label class="block text-xs text-slate-400 font-bold mb-2">Offer code from the source device</label>' +
+        '<textarea id="device-transfer-receive-offer" rows="6" placeholder="Paste the offer code here…" class="w-full p-3 rounded-xl border border-slate-700 bg-slate-950 text-slate-200 text-xs font-mono"></textarea>' +
+        '<button type="button" onclick="window.preparePrepProDeviceAnswer()" class="w-full px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black">Create answer code</button>' +
+        '<p id="device-transfer-status" role="status" class="text-xs text-slate-400">Waiting for an offer code.</p>' +
+        '</div>';
+    window.app.showModal("Receive data from another device", html);
+};
+
+window.preparePrepProDeviceAnswer = async function () {
+    if (!currentUser) return showToast("Sign in before receiving data.", "error");
+    try {
+        const raw = document.getElementById("device-transfer-receive-offer")?.value || "";
+        const offer = JSON.parse(raw);
+        if (offer.app !== TRANSFER_LABEL || offer.formatVersion !== 1 ||
+            offer.kind !== "offer" || offer.userId !== currentUser.uid ||
+            typeof offer.nonce !== "string" || typeof offer.sdp !== "string") {
+            throw new Error("The offer code is invalid or belongs to a different account.");
+        }
+        closeDeviceTransfer();
+        const pc = makeDevicePeerConnection();
+        const session = {
+            role: "receive", pc, channel: null, nonce: offer.nonce,
+            receiveState: null, pendingPayload: null
+        };
+        deviceTransfer = session;
+        pc.ondatachannel = event => setDeviceTransferChannel(event.channel, session);
+        pc.onconnectionstatechange = () => {
+            if (session !== deviceTransfer) return;
+            if (["failed", "disconnected"].includes(pc.connectionState)) {
+                updateTransferStatus("Connection failed. Your network may block direct connections; use Export/Import as a fallback.");
+            }
+        };
+        await pc.setRemoteDescription({ type: "offer", sdp: offer.sdp });
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await waitForIceGathering(pc);
+        if (session !== deviceTransfer) return;
+        const answerCode = JSON.stringify({
+            app: TRANSFER_LABEL,
+            formatVersion: 1,
+            kind: "answer",
+            userId: currentUser.uid,
+            nonce: session.nonce,
+            sdp: pc.localDescription.sdp
+        });
+        const html =
+            '<div class="space-y-4">' +
+            '<p class="text-sm text-slate-300 leading-relaxed">Copy this answer code and send it back to the source device. Paste it there and choose <strong>Connect and send latest data</strong>. Keep this page open while the data transfers.</p>' +
+            '<label class="block text-xs text-slate-400 font-bold mb-2">Answer code</label>' +
+            '<textarea id="device-transfer-answer-code-out" rows="6" readonly class="w-full p-3 rounded-xl border border-slate-700 bg-slate-950 text-slate-200 text-xs font-mono">' + transferEscape(answerCode) + '</textarea>' +
+            '<button type="button" onclick="window.copyPrepProTransferCode(\'device-transfer-answer-code-out\')" class="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold">Copy answer code</button>' +
+            '<p id="device-transfer-status" role="status" class="text-xs text-slate-400">Waiting for the source device to connect…</p>' +
+            '</div>';
+        window.app.showModal("Answer code ready", html);
+    } catch (error) {
+        console.error("Could not prepare device transfer answer:", error);
+        showToast("Could not prepare the transfer: " + error.message, "error");
+    }
+};
+
+async function handleDeviceTransferMessage(event, session) {
+    if (session !== deviceTransfer) return;
+    let message;
+    try {
+        message = JSON.parse(String(event.data || ""));
+    } catch {
+        showToast("Received an invalid device-transfer message.", "error");
+        return;
+    }
+
+    if (session.role === "send") {
+        if (message.type === "accepted") {
+            updateTransferStatus("The receiving device saved the transferred data.");
+            showToast("Device transfer completed.", "success");
+            setTimeout(() => {
+                if (deviceTransfer === session) closeDeviceTransfer();
+            }, 1200);
+        } else if (message.type === "rejected") {
+            updateTransferStatus("The receiving device cancelled the transfer.");
+            showToast("The receiving device cancelled the transfer.", "info");
+        }
+        return;
+    }
+
+    if (session.role !== "receive") return;
+    if (message.type === "start") {
+        const validParts = Number.isInteger(message.totalParts) &&
+            message.totalParts > 0 &&
+            message.totalParts <= Math.ceil(TRANSFER_MAX_CHARS / TRANSFER_CHUNK_CHARS);
+        const validLength = Number.isInteger(message.totalChars) &&
+            message.totalChars > 0 && message.totalChars <= TRANSFER_MAX_CHARS;
+        if (message.userId !== currentUser?.uid || message.nonce !== session.nonce ||
+            !validParts || !validLength ||
+            message.totalParts !== Math.ceil(message.totalChars / TRANSFER_CHUNK_CHARS)) {
+            showToast("The incoming transfer metadata is invalid.", "error");
+            return;
+        }
+        session.receiveState = {
+            parts: new Array(message.totalParts),
+            totalParts: message.totalParts,
+            totalChars: message.totalChars,
+            receivedParts: 0,
+            receivedChars: 0
+        };
+        updateTransferStatus("Receiving data… 0 / " + message.totalChars.toLocaleString() + " characters");
+        return;
+    }
+
+    if (message.type === "chunk") {
+        const state = session.receiveState;
+        if (!state || !Number.isInteger(message.index) || message.index < 0 ||
+            message.index >= state.totalParts || typeof message.content !== "string" ||
+            message.content.length > TRANSFER_CHUNK_CHARS) {
+            showToast("Received an invalid data chunk.", "error");
+            return;
+        }
+        if (state.parts[message.index] === undefined) {
+            state.parts[message.index] = message.content;
+            state.receivedParts += 1;
+            state.receivedChars += message.content.length;
+        }
+        updateTransferStatus("Receiving data… " + state.receivedChars.toLocaleString() +
+            " / " + state.totalChars.toLocaleString() + " characters");
+        return;
+    }
+
+    if (message.type === "finish") {
+        const state = session.receiveState;
+        if (!state || message.userId !== currentUser?.uid || message.nonce !== session.nonce ||
+            state.receivedParts !== state.totalParts || state.receivedChars !== state.totalChars ||
+            state.parts.some(part => typeof part !== "string")) {
+            showToast("The transferred data is incomplete. Please retry.", "error");
+            return;
+        }
+        try {
+            const envelope = JSON.parse(state.parts.join(""));
+            if (envelope.app !== TRANSFER_LABEL || envelope.formatVersion !== 1 ||
+                envelope.userId !== currentUser.uid || !isValidData(envelope.data)) {
+                throw new Error("The data does not match the signed-in PrepPro account.");
+            }
+            session.pendingPayload = envelope;
+            const subjectCount = envelope.data.subjects.length;
+            let topicCount = 0;
+            let subtopicCount = 0;
+            let pageCount = 0;
+            envelope.data.subjects.forEach(subject => {
+                (subject.topics || []).forEach(topic => {
+                    topicCount += 1;
+                    (topic.subtopics || []).forEach(subtopic => {
+                        subtopicCount += 1;
+                        pageCount += Array.isArray(subtopic.notes) ? subtopic.notes.length : 0;
+                    });
+                });
+            });
+            const dateLabel = envelope.exportedAt ? new Date(envelope.exportedAt).toLocaleString() : "Unknown";
+            const html =
+                '<div class="space-y-4">' +
+                '<p class="text-sm text-slate-300">Received a data snapshot from your other device. Review it, then choose whether to replace this device’s local data.</p>' +
+                '<div class="grid grid-cols-2 gap-3 text-sm">' +
+                '<div class="rounded-xl border border-slate-700 bg-slate-950 p-3"><span class="block text-xs text-slate-500">Subjects</span><strong class="text-white text-xl">' + subjectCount + '</strong></div>' +
+                '<div class="rounded-xl border border-slate-700 bg-slate-950 p-3"><span class="block text-xs text-slate-500">Topics</span><strong class="text-white text-xl">' + topicCount + '</strong></div>' +
+                '<div class="rounded-xl border border-slate-700 bg-slate-950 p-3"><span class="block text-xs text-slate-500">Subtopics</span><strong class="text-white text-xl">' + subtopicCount + '</strong></div>' +
+                '<div class="rounded-xl border border-slate-700 bg-slate-950 p-3"><span class="block text-xs text-slate-500">Notes pages</span><strong class="text-white text-xl">' + pageCount + '</strong></div>' +
+                '</div><p class="text-xs text-slate-500">Snapshot timestamp: ' + transferEscape(dateLabel) + '</p>' +
+                '<p class="text-xs text-amber-300">Replacing data cannot be undone on this device. The source device is not changed.</p>' +
+                '<div class="grid grid-cols-2 gap-2"><button type="button" onclick="window.rejectPrepProDeviceTransfer()" class="px-4 py-3 rounded-xl border border-slate-700 bg-slate-800 text-slate-200 font-bold">Cancel</button>' +
+                '<button type="button" onclick="window.acceptPrepProDeviceTransfer()" class="px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black">Replace local data</button></div>' +
+                '</div>';
+            window.app.showModal("Confirm device transfer", html);
+        } catch (error) {
+            console.error("Could not parse transferred PrepPro data:", error);
+            showToast("Transfer could not be validated: " + error.message, "error");
+        }
+    }
+}
+
+window.acceptPrepProDeviceTransfer = async function () {
+    const session = deviceTransfer;
+    const envelope = session?.pendingPayload;
+    if (!currentUser || !session || session.role !== "receive" || !envelope) {
+        return showToast("There is no completed transfer to accept.", "error");
+    }
+    try {
+        const normalized = window.app?.normalizeData ? window.app.normalizeData(envelope.data) : envelope.data;
+        await writeLocalUserData(currentUser.uid, normalized);
+        data = normalized;
+        try { await sendTransferJson(session.channel, { type: "accepted", userId: currentUser.uid, nonce: session.nonce }); } catch {}
+        window.app?.closeModal?.();
+        window.app?.init?.();
+        showToast("Latest data received and saved on this device.", "success");
+        setTimeout(() => {
+            if (deviceTransfer === session) closeDeviceTransfer();
+        }, 1200);
+    } catch (error) {
+        console.error("Could not save received data:", error);
+        showToast("Could not save the received data: " + error.message, "error");
+    }
+};
+
+window.rejectPrepProDeviceTransfer = async function () {
+    const session = deviceTransfer;
+    if (session?.channel?.readyState === "open") {
+        try { await sendTransferJson(session.channel, { type: "rejected", userId: currentUser?.uid, nonce: session.nonce }); } catch {}
+    }
+    window.app?.closeModal?.();
+    closeDeviceTransfer();
+    showToast("Device transfer cancelled.", "info");
+};
+
 window.loginWithGoogle = async function () {
     setStatus("Opening sign-in window...");
     try {
