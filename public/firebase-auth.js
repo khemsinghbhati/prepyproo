@@ -57,8 +57,8 @@ const CLOUD_SHA256_FIELD = "_prepProCloudSha256";
 const CLOUD_SNAPSHOT_HISTORY_FIELD = "_prepProCloudSnapshotHistory";
 const CLOUD_SYNC_DEBOUNCE_MS = 750;
 const CLOUD_CHUNK_RAW_BYTES = 300 * 1024;
-const CLOUD_TRANSFER_WINDOW_SIZE = 4;
-const CLOUD_MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024;
+// Each chunk is uploaded only after the previous Firestore write is acknowledged.
+// Downloading uses the same one-chunk-at-a-time backpressure pattern.
 const CLOUD_CHUNK_COLLECTION = "chunks";
 const CLOUD_SNAPSHOT_COLLECTION = "syncSnapshots";
 const DEFAULT_DATA = { subjects: [], xp: 0 };
@@ -203,40 +203,49 @@ async function readCloudUserData(uid, cloudDocument) {
     const expectedHash = cloudDocument[CLOUD_SHA256_FIELD];
 
     if (!/^[A-Za-z0-9_-]{8,100}$/.test(snapshotId) ||
-        chunkCount < 1 ||
-        chunkCount > Math.ceil(CLOUD_MAX_SNAPSHOT_BYTES / CLOUD_CHUNK_RAW_BYTES) ||
-        totalBytes < 1 || totalBytes > CLOUD_MAX_SNAPSHOT_BYTES) {
-        throw new Error("The cloud snapshot manifest is invalid or exceeds the supported transfer size.");
+        !Number.isSafeInteger(chunkCount) || chunkCount < 1 ||
+        !Number.isSafeInteger(totalBytes) || totalBytes < 1 ||
+        chunkCount !== Math.ceil(totalBytes / CLOUD_CHUNK_RAW_BYTES)) {
+        throw new Error("The cloud snapshot manifest is invalid.");
     }
 
-    const chunkBytes = new Array(chunkCount);
-    for (let windowStart = 0; windowStart < chunkCount; windowStart += CLOUD_TRANSFER_WINDOW_SIZE) {
-        const windowEnd = Math.min(windowStart + CLOUD_TRANSFER_WINDOW_SIZE, chunkCount);
-        const windowResults = await Promise.all(
-            Array.from({ length: windowEnd - windowStart }, (_, offset) => windowStart + offset)
-                .map(async index => {
-                    const snapshot = await getDoc(cloudSnapshotChunk(uid, snapshotId, index));
-                    if (!snapshot.exists()) {
-                        throw new Error("A cloud data chunk is missing. The complete snapshot was not applied; retry sync.");
-                    }
-                    const record = snapshot.data();
-                    if (record.snapshotId !== snapshotId || record.index !== index ||
-                        typeof record.payload !== "string" || record.payload.length > 420 * 1024) {
-                        throw new Error("A cloud data chunk failed validation.");
-                    }
-                    const bytes = base64ToBytes(record.payload);
-                    if (bytes.length > CLOUD_CHUNK_RAW_BYTES ||
-                        (index < chunkCount - 1 && bytes.length !== CLOUD_CHUNK_RAW_BYTES)) {
-                        throw new Error("A cloud data chunk has an invalid size.");
-                    }
-                    return { index, bytes };
-                })
-        );
-        windowResults.forEach(result => { chunkBytes[result.index] = result.bytes; });
-        setSaveStatus("Downloading cloud snapshot · received " + windowEnd + " of " + chunkCount + " chunks");
+    // Fetch and validate exactly one chunk before requesting the next. Keeping this
+    // sequential avoids an aggregate in-flight batch and limits network/memory bursts.
+    const chunkBytes = [];
+    let downloadedBytes = 0;
+    for (let index = 0; index < chunkCount; index += 1) {
+        const snapshot = await getDoc(cloudSnapshotChunk(uid, snapshotId, index));
+        if (!snapshot.exists()) {
+            throw new Error("Cloud chunk " + (index + 1) + " of " + chunkCount +
+                " is missing. The complete snapshot was not applied; retry sync.");
+        }
+        const record = snapshot.data();
+        if (record.snapshotId !== snapshotId || record.index !== index ||
+            typeof record.payload !== "string" || record.payload.length > 420 * 1024) {
+            throw new Error("Cloud chunk " + (index + 1) + " failed validation.");
+        }
+        const bytes = base64ToBytes(record.payload);
+        if (bytes.length > CLOUD_CHUNK_RAW_BYTES ||
+            (index < chunkCount - 1 && bytes.length !== CLOUD_CHUNK_RAW_BYTES) ||
+            downloadedBytes + bytes.length > totalBytes) {
+            throw new Error("Cloud chunk " + (index + 1) + " has an invalid size.");
+        }
+        chunkBytes.push(bytes);
+        downloadedBytes += bytes.length;
+        setSaveStatus("Downloading cloud snapshot · received " + (index + 1) +
+            " of " + chunkCount + " chunks");
     }
 
-    const assembled = new Uint8Array(totalBytes);
+    if (downloadedBytes !== totalBytes) {
+        throw new Error("The cloud snapshot is incomplete. The local copy was kept.");
+    }
+
+    let assembled;
+    try {
+        assembled = new Uint8Array(totalBytes);
+    } catch {
+        throw new Error("This snapshot is too large for the available browser memory. The local copy was kept.");
+    }
     let offset = 0;
     for (const bytes of chunkBytes) {
         if (!bytes || offset + bytes.length > totalBytes) {
@@ -288,8 +297,8 @@ async function cleanupCloudSnapshot(uid, snapshotId) {
 async function writeCloudUserSnapshot(uid, userData) {
     const serialized = JSON.stringify(extractCloudUserData(userData));
     const bytes = new TextEncoder().encode(serialized);
-    if (bytes.byteLength < 1 || bytes.byteLength > CLOUD_MAX_SNAPSHOT_BYTES) {
-        throw new Error("This PrepPro snapshot is larger than the 100 MiB cloud-sync limit. Your local copy is safe; use Export data for a backup.");
+    if (bytes.byteLength < 1) {
+        throw new Error("This PrepPro snapshot is empty and cannot be synced.");
     }
 
     const snapshotId = "s_" + (crypto.randomUUID
@@ -324,23 +333,20 @@ async function writeCloudUserSnapshot(uid, userData) {
     });
 
     try {
-        for (let windowStart = 0; windowStart < chunkCount; windowStart += CLOUD_TRANSFER_WINDOW_SIZE) {
-            const windowEnd = Math.min(windowStart + CLOUD_TRANSFER_WINDOW_SIZE, chunkCount);
-            const windowWrites = await Promise.allSettled(
-                Array.from({ length: windowEnd - windowStart }, (_, offset) => windowStart + offset)
-                    .map(async index => {
-                        const start = index * CLOUD_CHUNK_RAW_BYTES;
-                        const chunk = bytes.subarray(start, Math.min(start + CLOUD_CHUNK_RAW_BYTES, bytes.byteLength));
-                        await setDoc(cloudSnapshotChunk(uid, snapshotId, index), {
-                            snapshotId,
-                            index,
-                            payload: bytesToBase64(chunk)
-                        });
-                    })
-            );
-            const failedWrite = windowWrites.find(result => result.status === "rejected");
-            if (failedWrite) throw failedWrite.reason;
-            setSaveStatus("Uploading cloud snapshot · sent " + windowEnd + " of " + chunkCount + " chunks");
+        for (let index = 0; index < chunkCount; index += 1) {
+            const start = index * CLOUD_CHUNK_RAW_BYTES;
+            const chunk = bytes.subarray(start, Math.min(start + CLOUD_CHUNK_RAW_BYTES, bytes.byteLength));
+
+            // setDoc resolves when Firestore acknowledges this write. Do not send
+            // the following chunk until the current one has been confirmed.
+            await setDoc(cloudSnapshotChunk(uid, snapshotId, index), {
+                snapshotId,
+                index,
+                payload: bytesToBase64(chunk)
+            });
+
+            setSaveStatus("Uploading cloud snapshot · acknowledged " + (index + 1) +
+                " of " + chunkCount + " chunks");
             if (currentUser?.uid !== uid) throw new Error("Account changed during cloud sync.");
         }
 
