@@ -41,7 +41,9 @@ PrepPro is a serverless, single-page learning app that helps students organize s
 ### Cloud and account integration
 
 - **Authentication:** Firebase Authentication with Google sign-in, as configured for the deployed app.
-- **Local data:** Study content, attempt history, and Notes metadata are stored in browser IndexedDB. Use Export/Import data to transfer a JSON backup between devices.
+- **Automatic cross-device sync:** Study content, attempt history, and Notes metadata are saved locally in IndexedDB and synced through Firestore when online. Sign in with the same account on each device; no transfer codes are needed.
+- **Offline use:** Local saves continue in IndexedDB without an internet connection and sync when connectivity returns.
+- **Backups:** Export/Import data remains available for a manual JSON backup or recovery; importing replaces the current local workspace.
 - **Hosting:** The live app is hosted on Firebase Hosting.
 
 ## 🛠️ Tech Stack
@@ -52,7 +54,7 @@ PrepPro is a serverless, single-page learning app that helps students organize s
 | Styling | Tailwind CSS via CDN |
 | Icons | Phosphor Icons |
 | Authentication | Firebase Authentication |
-| Data persistence | Browser IndexedDB (local-first) with JSON export/import |
+| Data persistence | IndexedDB local cache plus Firestore cloud sync |
 | Image hosting | ImgBB uploads and HTTP/HTTPS image URLs |
 | Deployment | Firebase Hosting |
 
@@ -95,7 +97,7 @@ The frontend is separated into feature-focused JavaScript files and responsibili
 For the complete step-by-step setup and testing instructions, see [How to test Locally.md](How%20to%20test%20Locally.md).
 
 
-Localhost automatically uses a separate demo Firebase project with the Auth and Firestore emulators. Firebase Authentication is used for sign-in. IndexedDB stores the working data on each browser. Firestore is accessed only for one-time migration of legacy user data; it is not used for ongoing saves. The deployed site uses the configured production Firebase project.
+Localhost automatically uses a separate demo Firebase project with the Auth and Firestore emulators. Firebase Authentication is used for sign-in. IndexedDB stores a local copy so the app can continue saving offline; Firestore synchronizes the latest data snapshot across devices signed in with the same account. The deployed site uses the configured production Firebase project.
 
 ### Start the local app
 
@@ -115,8 +117,8 @@ Localhost automatically uses a separate demo Firebase project with the Auth and 
 
 ### Important notes
 
-- The local app uses the Auth emulator on port **9099** and Firestore emulator on port **8080**. The Firestore emulator is only needed to test the legacy migration path; these ports are configured in `firebase.json`.
-- Data is local to the browser/device. Use **Export data** on the source device, transfer the JSON file securely, then sign in to the same PrepPro account and use **Import data** on the destination device. Import replaces that device's local data.
+- The local app uses the Auth emulator on port **9099** and Firestore emulator on port **8080**. Firestore is required to test automatic cross-device sync locally; these ports are configured in `firebase.json`.
+- Data saves locally first and syncs to Firestore when online. Sign in with the same PrepPro account on another browser/device to receive updates automatically. **Export data** and **Import data** are retained as manual backup/recovery tools; importing replaces the destination's local data.
 - Local sign-in is simulated by the Auth emulator; it does not authenticate against the production Google sign-in service.
 - The `demo-prepyproo` project ID keeps emulator traffic separate from the real `prepyproo` Firebase project. Do not replace it with the production project ID when running local tests.
 - Emulator data is for testing only. It is separate from production data and may be lost when emulators stop unless you configure emulator data export/import.
