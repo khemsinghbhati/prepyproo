@@ -306,6 +306,7 @@
                 type: "canvas",
                 text: "",
                 textColor: "#ffffff",
+                textBoxes: [],
                 imageUrl: "",
                 imagePageUrl: "",
                 foregroundUrl: "",
@@ -341,7 +342,17 @@
             const page = stData && stData.subtopic.notes.find(item => item.id === pageId);
             if (!page) return this.showToast("Notes page not found.", "error");
             this.currentNotePageId = page.id;
-            this.noteDraft = { mode: "type", inkColor: this.getNoteTextColor(stData, page), brushSize: 5, drawing: false, hasInk: Boolean(page.foregroundUrl) };
+            const legacyBoxes = Array.isArray(page.textBoxes) ? page.textBoxes : [];
+            this.noteDraft = {
+                mode: "draw",
+                inkColor: this.getNoteTextColor(stData, page),
+                brushSize: 5,
+                drawing: false,
+                inkChanged: false,
+                loadingInk: Boolean(page.foregroundUrl),
+                textBoxes: structuredClone(legacyBoxes),
+                selectedTextBoxId: null
+            };
             this.setView("note-page-editor");
         },
 
