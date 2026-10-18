@@ -367,11 +367,6 @@ async function writeCloudUserSnapshot(uid, userData) {
             [LEGACY_MIGRATION_MARKER]: previousRoot?.[LEGACY_MIGRATION_MARKER] || new Date().toISOString()
         });
 
-        // Retain the latest three generations so readers already downloading an older
-        // snapshot are unlikely to lose their chunks during a newer upload.
-        for (const obsoleteId of obsoleteSnapshots) {
-            cleanupCloudSnapshot(uid, obsoleteId);
-        }
     } catch (error) {
         cleanupCloudSnapshot(uid, snapshotId);
         throw error;
