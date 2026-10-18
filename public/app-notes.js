@@ -848,64 +848,66 @@
             const stData = this.findSubtopic(activeSubtopicId);
             const page = this.getCurrentNotePage();
             const canvas = document.getElementById("notes-draw-canvas");
-            const textarea = document.getElementById("notes-text-layer");
             const status = document.getElementById("notes-save-status");
-            if (!stData || !page || !canvas || !textarea) return;
+            if (!stData || !page || !canvas) return;
+            if (this.noteDraft?.loadingInk) return this.showToast("Wait for the saved drawing to finish loading.", "error");
             if (this.imageUploadInProgress) return this.showToast("Wait for the current image upload to finish.", "error");
+
             const width = canvas.width;
             const height = canvas.height;
-            const text = textarea.value;
-            const textColor = document.getElementById("note-ink-color")?.value || this.getNoteTextColor(stData, page);
+            const textBoxes = structuredClone(this.noteDraft?.textBoxes || []);
             const foreground = document.createElement("canvas");
             foreground.width = width;
             foreground.height = height;
-            const foregroundContext = foreground.getContext("2d");
-            foregroundContext.drawImage(canvas, 0, 0, width, height);
+            foreground.getContext("2d").drawImage(canvas, 0, 0, width, height);
             const resolvedBackground = this.getNoteBackground(stData, page);
             const finalCanvas = document.createElement("canvas");
             finalCanvas.width = width;
             finalCanvas.height = height;
             const finalContext = finalCanvas.getContext("2d");
             if (status) status.textContent = "Composing page…";
+
             try {
                 if (resolvedBackground.type === "image") {
-                    try {
-                        const backgroundImage = await loadImage(resolvedBackground.value);
-                        drawCover(finalContext, backgroundImage, width, height);
-                    } catch (error) {
-                        finalContext.fillStyle = "#000000";
-                        finalContext.fillRect(0, 0, width, height);
-                        this.showToast("Background image could not be read for export; the saved preview will keep the background setting.", "error");
-                    }
+                    const backgroundImage = await loadImage(resolvedBackground.value);
+                    drawCover(finalContext, backgroundImage, width, height);
                 } else {
                     finalContext.fillStyle = resolvedBackground.value;
                     finalContext.fillRect(0, 0, width, height);
                 }
+
                 if (page.imagePageUrl) {
                     const pageImage = await loadImage(page.imagePageUrl);
                     drawContain(finalContext, pageImage, width, height);
                 }
                 finalContext.drawImage(foreground, 0, 0);
-                drawWrappedText(finalContext, text, textColor, width, height);
-                if (status) status.textContent = "Uploading page image to ImgBB…";
+                textBoxes.forEach(box => {
+                    if (String(box.text || "").trim()) {
+                        drawWrappedText(finalContext, box.text, box.color, width, height, box);
+                    }
+                });
+
+                if (status) status.textContent = "Uploading the latest page image to ImgBB…";
                 let foregroundUrl = page.foregroundUrl || "";
-                if (this.noteDraft && this.noteDraft.hasInk) {
+                if (this.noteDraft && this.noteDraft.inkChanged) {
                     foregroundUrl = await this.uploadNoteImage(await canvasToBlob(foreground));
                 }
                 const flattenedUrl = await this.uploadNoteImage(await canvasToBlob(finalCanvas));
-                page.text = text;
-                page.textColor = textColor;
+
+                page.text = "";
+                page.textBoxes = textBoxes;
                 page.width = width;
                 page.height = height;
                 page.foregroundUrl = foregroundUrl;
                 page.imageUrl = flattenedUrl;
                 page.type = page.imagePageUrl ? "image" : "canvas";
-                await this.save();
+                const saved = await this.save();
+                if (!saved) throw new Error("The image uploaded, but local page data could not be saved. Please retry.");
                 this.returnToNotesManager();
-                this.showToast("Notes page confirmed and saved to ImgBB.", "success");
+                this.showToast("Page saved. Latest drawing and page images are stored on ImgBB.", "success");
             } catch (error) {
                 console.error(error);
-                if (status) status.textContent = "Save failed. Your text and drawing remain in this editor.";
+                if (status) status.textContent = "Save failed. Your drawing and text remain in this editor.";
                 this.showToast("Could not save notes page: " + error.message, "error");
             }
         }
