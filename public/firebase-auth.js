@@ -7,7 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import {
     getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, serverTimestamp,
-    collection, getDocs, deleteDoc, query, orderBy, startAfter, limit
+    collection, getDocs, deleteDoc, query, orderBy, startAfter, limit, runTransaction
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -66,7 +66,39 @@ const LOCAL_DB_NAME = "preppro-local-data";
 const LOCAL_DB_VERSION = 1;
 const LOCAL_STORE_NAME = "users";
 const copyDefaultData = () => structuredClone(DEFAULT_DATA);
-const cloudManifestDocument = (uid) => doc(db, "users", uid, "syncState", "current");
+const cloudManifestDocument = (uid) => doc(db, "users", uid);
+const storedManifestDocument = (uid) => doc(db, "users", uid, "syncState", "current");
+
+async function getCurrentCloudManifest(uid) {
+    const rootRef = cloudManifestDocument(uid);
+    const storedManifestRef = storedManifestDocument(uid);
+
+    // Keep current cloud data intact while making the account root the manifest.
+    // Snapshot chunks stay in place; only the small manifest document moves.
+    await runTransaction(db, async transaction => {
+        const rootSnapshot = await transaction.get(rootRef);
+        const storedManifestSnapshot = await transaction.get(storedManifestRef);
+
+        if (rootSnapshot.exists()) {
+            if (isChunkedCloudManifest(rootSnapshot.data()) && storedManifestSnapshot.exists()) {
+                transaction.delete(storedManifestRef);
+            }
+            return;
+        }
+
+        if (!storedManifestSnapshot.exists()) return;
+
+        const manifest = storedManifestSnapshot.data();
+        if (!isChunkedCloudManifest(manifest)) {
+            throw new Error("The cloud sync manifest is invalid. Your local copy was kept.");
+        }
+
+        transaction.set(rootRef, manifest);
+        transaction.delete(storedManifestRef);
+    });
+
+    return getDoc(rootRef);
+}
 
 function setStatus(message) {
     const element = document.getElementById("auth-status");
@@ -774,9 +806,9 @@ async function loadUserData(user) {
     let cloudReadFailed = false;
     let cloudReadError = null;
     try {
-        // The current sync manifest is the single cloud entry point for every account.
-        // If it does not exist, the local workspace can initialize it after sign-in.
-        cloudSnapshot = await getDoc(cloudManifestDocument(uid));
+        // The account root document is the single cloud manifest for every account.
+        // This preserves the active snapshot while relocating its manifest if necessary.
+        cloudSnapshot = await getCurrentCloudManifest(uid);
     } catch (error) {
         cloudReadFailed = true;
         cloudReadError = error;
