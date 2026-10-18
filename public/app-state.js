@@ -17,7 +17,6 @@ let editingQuestionId = null;
 // collapsed, but a user's expand/collapse choice is preserved during navigation.
 const collapsedSubjectIds = new Set();
 const collapsedTopicIds = new Set();
-const expandedSubtopicIds = new Set();
 const initializedDashboardSubjectIds = new Set();
 const initializedDashboardTopicIds = new Set();
 // Analytics expansion state is separate from the Learning Path dashboard state.

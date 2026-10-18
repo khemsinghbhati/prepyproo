@@ -181,7 +181,6 @@ Object.assign(window.app, {
             const s = data.subjects.find(x => x.id === sId);
             if(s) {
                 const removedTopic = s.topics.find(x => x.id === tId);
-                if (removedTopic) removedTopic.subtopics.forEach(st => expandedSubtopicIds.delete(st.id));
                 s.topics = s.topics.filter(x => x.id !== tId);
                 collapsedTopicIds.delete(tId);
                 this.save(); this.setView('dashboard');
@@ -194,7 +193,6 @@ Object.assign(window.app, {
             const t = s?.topics.find(x => x.id === tId);
             if(t) {
                 t.subtopics = t.subtopics.filter(x => x.id !== stId);
-                expandedSubtopicIds.delete(stId);
                 this.save(); this.setView('dashboard');
             }
         }
@@ -370,14 +368,6 @@ Object.assign(window.app, {
         window.scrollTo(0, scrollY);
     },
 
-    toggleSubtopicExpanded(subtopicId) {
-        if (expandedSubtopicIds.has(subtopicId)) expandedSubtopicIds.delete(subtopicId);
-        else expandedSubtopicIds.add(subtopicId);
-        const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
-        this.renderDashboard(document.getElementById('view-container'));
-        window.scrollTo(0, scrollY);
-    },
-
     initializeDashboardExpansionDefaults() {
         data.subjects.forEach(subject => {
             if (!initializedDashboardSubjectIds.has(subject.id)) {
@@ -528,20 +518,18 @@ Object.assign(window.app, {
                     if(!isEditMode && isStComplete) icon = '<div class="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shadow-inner"><i class="ph-fill ph-check-circle text-emerald-400 text-3xl"></i></div>';
 
                     html += `
-                        <div class="relative flex flex-col ${expandedSubtopicIds.has(st.id) ? 'w-[280px] sm:w-[320px]' : 'w-[200px]'} group cursor-pointer drag-drop-target" ondragover="app.allowDrop(event, 'subtopic', '${topic.id}')" ondrop="app.dropItem(event, 'subtopic', '${st.id}', '${topic.id}')" onclick="app.handleSubtopicClick('${st.id}')">
+                        <div class="relative flex flex-col w-[200px] group cursor-pointer drag-drop-target" ondragover="app.allowDrop(event, 'subtopic', '${topic.id}')" ondrop="app.dropItem(event, 'subtopic', '${st.id}', '${topic.id}')" onclick="app.handleSubtopicClick('${st.id}')">
                             <div class="relative z-10 flex flex-col p-5 rounded-2xl border-2 transition-all duration-300 ${cardStyle} shadow-lg active:scale-95 h-full">
                                 <div class="flex justify-between items-start mb-5">
                                     ${icon}
                                     ${isEditMode ? `
                                         <div class="flex gap-1 relative z-20">
                                             <button draggable="true" ondragstart="app.startDrag(event, 'subtopic', '${st.id}', '${topic.id}')" ondragend="app.endDrag(event)" onclick="event.stopPropagation()" class="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors cursor-grab active:cursor-grabbing" title="Drag to reorder subtopic" aria-label="Drag to reorder subtopic"><i class="ph-bold ph-dots-six-vertical"></i></button>
-                                            <button onclick="event.stopPropagation(); app.toggleSubtopicExpanded('${st.id}')" aria-expanded="${expandedSubtopicIds.has(st.id)}" class="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors" title="${expandedSubtopicIds.has(st.id) ? 'Collapse subtopic details' : 'Expand subtopic details'}" aria-label="${expandedSubtopicIds.has(st.id) ? 'Collapse subtopic details' : 'Expand subtopic details'}"><i class="ph-bold ${expandedSubtopicIds.has(st.id) ? 'ph-caret-up' : 'ph-caret-down'}"></i></button>
                                             <button onclick="event.stopPropagation(); app.editSubtopicName('${subject.id}', '${topic.id}', '${st.id}')" class="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors" title="Rename"><i class="ph-fill ph-pencil-simple"></i></button>
                                             <button onclick="event.stopPropagation(); app.deleteSubtopic('${subject.id}', '${topic.id}', '${st.id}')" class="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors" title="Delete"><i class="ph-fill ph-trash"></i></button>
                                         </div>
                                     ` : `
                                         <div class="ml-auto flex items-center gap-2 relative z-20">
-                                            <button onclick="event.stopPropagation(); app.toggleSubtopicExpanded('${st.id}')" aria-expanded="${expandedSubtopicIds.has(st.id)}" class="p-1.5 rounded-lg text-slate-500 hover:text-blue-400 hover:bg-slate-800 transition-colors" title="${expandedSubtopicIds.has(st.id) ? 'Collapse subtopic details' : 'Expand subtopic details'}" aria-label="${expandedSubtopicIds.has(st.id) ? 'Collapse subtopic details' : 'Expand subtopic details'}"><i class="ph-bold ${expandedSubtopicIds.has(st.id) ? 'ph-caret-up' : 'ph-caret-down'}"></i></button>
                                             <input type="checkbox" ${isStComplete ? 'checked' : ''} onclick="event.stopPropagation(); app.toggleSubtopicComplete('${subject.id}', '${topic.id}', '${st.id}')" class="w-6 h-6 accent-emerald-500 cursor-pointer rounded-md bg-slate-800 border-slate-700" title="${isStComplete ? 'Mark Incomplete' : 'Mark Complete'}">
                                         </div>
                                     `}
@@ -550,19 +538,6 @@ Object.assign(window.app, {
                                     <span>${this.escapeHTML(st.name)}</span>
                                 </span>
                             </div>
-                            ${expandedSubtopicIds.has(st.id) ? `
-                                <div class="mt-3 p-4 rounded-2xl border border-slate-700 bg-slate-950/95 shadow-lg text-left space-y-4" onclick="event.stopPropagation()">
-                                    <section>
-                                        <p class="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-2">Flashcards Ã‚Â· ${st.flashcards.length}</p>
-                                        ${st.flashcards.length ? st.flashcards.slice(0, 4).map((fc, cardIndex) => `<p class="text-xs text-slate-300 py-1.5 border-b border-slate-800 last:border-0"><span class="text-slate-600 mr-2">${cardIndex + 1}.</span>${this.escapeHTML(fc.front || 'Untitled flashcard')}</p>`).join('') + (st.flashcards.length > 4 ? `<p class="text-[10px] text-slate-500 font-bold mt-2">+ ${st.flashcards.length - 4} more flashcards</p>` : '') : '<p class="text-xs text-slate-500">No flashcards yet.</p>'}
-                                    </section>
-                                    <section>
-                                        <p class="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-2">Question Sets Ã‚Â· ${st.questionSets.length}</p>
-                                        ${st.questionSets.length ? st.questionSets.map(set => `<div class="flex items-center justify-between gap-2 py-1.5 border-b border-slate-800 last:border-0"><span class="text-xs text-slate-300">${this.escapeHTML(set.name)}</span><span class="text-[10px] text-slate-500 shrink-0">${set.questions.length} Q</span></div>`).join('') : '<p class="text-xs text-slate-500">No question sets yet.</p>'}
-                                    </section>
-                                    <p class="text-[10px] text-slate-500 border-t border-slate-800 pt-3">Click the subtopic card to ${isEditMode ? 'edit its content' : 'open study options'}.</p>
-                                </div>
-                            ` : ''}
                         </div>
                     `;
                 });
