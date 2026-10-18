@@ -376,6 +376,29 @@ async function writeCloudUserSnapshot(uid, userData) {
         cleanupCloudSnapshot(uid, snapshotId);
         throw error;
     }
+
+    // All accounts keep the same Firebase Auth UID. The previous version stored
+    // its payload directly at users/{uid}; remove that legacy root document only
+    // after the new chunked snapshot and manifest are fully committed.
+    let legacyCleanupFailed = false;
+    if (currentUser?.uid === uid) {
+        try {
+            await deleteDoc(legacyUserDocument(uid));
+        } catch (error) {
+            legacyCleanupFailed = true;
+            console.warn("The new cloud snapshot is active, but the old test-account document could not be removed:", error);
+        }
+    } else {
+        legacyCleanupFailed = true;
+    }
+
+    // Retain the latest three generations so readers already downloading an older
+    // snapshot are unlikely to lose their chunks during a newer upload.
+    for (const obsoleteId of obsoleteSnapshots) {
+        cleanupCloudSnapshot(uid, obsoleteId);
+    }
+
+    return { legacyCleanupFailed };
 }
 
 function openLocalDatabase() {
@@ -548,10 +571,12 @@ async function flushCloudSync() {
     cloudWriteInProgress = true;
     let failed = false;
     try {
-        await writeCloudUserSnapshot(item.uid, item.data);
+        const syncResult = await writeCloudUserSnapshot(item.uid, item.data);
         if (currentUser?.uid === item.uid && !queuedCloudWrite &&
             latestLocalSaveAt <= item.localUpdatedAt) {
-            setSaveStatus("Saved & synced across devices");
+            setSaveStatus(syncResult?.legacyCleanupFailed
+                ? "Synced new cloud data · old test record could not be removed"
+                : "Saved & synced across devices");
         }
     } catch (error) {
         failed = true;
@@ -809,8 +834,9 @@ async function loadUserData(user) {
     let cloudSnapshot = null;
     let cloudReadFailed = false;
     try {
-        // New sync manifests live separately from the legacy root user document, so
-        // a preview/new client does not overwrite data used by the currently live app.
+        // Prefer the new snapshot manifest. If it does not exist yet, read the
+        // same account's old root document and migrate its data to the chunked model
+        // on the first successful sync.
         const manifestSnapshot = await getDoc(cloudManifestDocument(uid));
         cloudSnapshot = manifestSnapshot.exists()
             ? manifestSnapshot
