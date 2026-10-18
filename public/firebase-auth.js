@@ -862,6 +862,7 @@ window.addEventListener("offline", () => {
 
 onAuthStateChanged(auth, async (user) => {
     const requestId = ++authRequestId;
+    if (deviceTransfer && (!user || (currentUser && currentUser.uid !== user.uid))) closeDeviceTransfer();
     if (!user) {
         currentUser = null;
         data = copyDefaultData();
