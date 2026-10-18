@@ -372,9 +372,13 @@ function startCloudSync(uid) {
         if (!currentUser || currentUser.uid !== uid || snapshot.metadata.fromCache ||
             snapshot.metadata.hasPendingWrites) return;
         const isInitialAuthoritativeSnapshot = !receivedInitialCloudSnapshot;
+        const hadCloudBaseline = cloudBaselineKnown;
+        const previousCloudVersion = lastAppliedCloudAt;
         receivedInitialCloudSnapshot = true;
 
         if (!snapshot.exists()) {
+            cloudBaselineKnown = true;
+            lastAppliedCloudAt = 0;
             const localRecord = await readLocalUserData(uid).catch(() => null);
             if (localRecord && currentUser?.uid === uid) {
                 scheduleCloudSync(uid, localRecord.data, 100);
@@ -386,6 +390,8 @@ function startCloudSync(uid) {
         const remoteUpdatedAt = cloudUpdatedAtMillis(rawCloudData);
         const remoteData = extractCloudUserData(rawCloudData);
         if (!isValidData(remoteData)) {
+            cloudBaselineKnown = true;
+            lastAppliedCloudAt = remoteUpdatedAt;
             setSaveStatus("Saved locally · cloud data format needs attention");
             return;
         }
@@ -396,6 +402,7 @@ function startCloudSync(uid) {
             : structuredClone(data);
 
         if (sameUserData(localData, remoteData)) {
+            cloudBaselineKnown = true;
             lastAppliedCloudAt = Math.max(lastAppliedCloudAt, remoteUpdatedAt);
             if (!remoteUpdatedAt) scheduleCloudSync(uid, localData, 100);
             else if (!queuedCloudWrite && !cloudWriteInProgress) setSaveStatus("Saved & synced across devices");
@@ -405,9 +412,11 @@ function startCloudSync(uid) {
         // Local edits waiting to upload take precedence over an incoming snapshot.
         if (queuedCloudWrite || cloudSyncTimer || cloudWriteInProgress) return;
 
+        const knownVersion = hadCloudBaseline ? previousCloudVersion : (latestLocalSaveAt || 0);
         const remoteIsNewer = (hasUserContent(remoteData) && !hasUserContent(localData)) ||
-            (remoteUpdatedAt > (cloudBaselineKnown ? lastAppliedCloudAt : (latestLocalSaveAt || 0))) ||
+            (remoteUpdatedAt > knownVersion) ||
             (!remoteUpdatedAt && !isInitialAuthoritativeSnapshot);
+        cloudBaselineKnown = true;
         if (remoteIsNewer) {
             pendingCloudRemote = {
                 uid, data: remoteData, updatedAt: remoteUpdatedAt,
@@ -419,6 +428,7 @@ function startCloudSync(uid) {
                 setSaveStatus("Update available from another device · return to dashboard to apply");
             }
         } else {
+            lastAppliedCloudAt = Math.max(lastAppliedCloudAt, remoteUpdatedAt);
             scheduleCloudSync(uid, localData, 150);
         }
     }, error => {
