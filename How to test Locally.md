@@ -1,6 +1,6 @@
 # PrepPro — How to Test Locally on Windows
 
-Follow these steps in order to run a PrepPro branch locally. Firebase Authentication uses the Auth emulator on localhost, while ongoing app data is saved in browser IndexedDB. The Firestore emulator is retained only for testing the one-time migration path from older versions. All local emulator data is separate from production data.
+Follow these steps in order to run a PrepPro branch locally. Firebase Authentication and Firestore use local emulators on localhost. IndexedDB stores a local copy in each browser; Firestore syncs data between test browsers signed in with the same emulator account. All emulator data is separate from production data.
 
 > [!IMPORTANT]
 > For local testing, always use the `demo-prepyproo` project ID and the local URL `http://127.0.0.1:5000`. Do **not** run `firebase deploy` as part of this workflow.
@@ -140,15 +140,17 @@ If PrepPro displays its login screen, use the local Firebase Authentication emul
 
 Your production account data is **not** automatically imported into the emulator. Create separate test data locally instead.
 
-## Step 10 — Test Notes and local-first saves
+## Step 10 — Test Notes, local saves, and automatic sync
 
 1. In Creator Mode, open a subtopic and choose Notes.
 2. Create a blank page, draw a few strokes, choose **T Add text**, click on the page to place a text box, enter text, move the box by its **Move** handle, change its colour/size, and confirm the page.
 3. Reopen the page and verify the strokes and text positions persist. Verify ImgBB contains the current transparent strokes PNG and the current flattened page PNG (old uploads are expected to remain).
 4. Test erasing, clearing all strokes, uploading an image page, custom background images, background scopes, resizing, page insertion, reordering, deletion, and Learner Mode reading.
-5. Close/reopen the browser and sign back in with the same account; data should still be present in IndexedDB on that browser.
-6. For cross-device transfer, open the deployed PR preview on two devices/browsers signed in with the same account. Choose **Send to device** on the source and **Receive from device** on the destination, exchange the offer/answer codes, keep both online, and confirm replacement on the destination. Both browsers must stay open during the transfer. If the network blocks WebRTC, use Export/Import JSON.
-7. Verify existing Flashcards, Quizzes, Analytics, and XP still work.
+5. Close/reopen the browser and sign back in with the same account; data should still be present locally.
+6. Open PrepPro in two separate browser profiles using the **same test account in the Auth emulator**. Make a change in one window, wait for the save status to report that it synced, and verify the other window receives it automatically. Then edit in the second window and check that the first receives the change. No codes or file transfer should be required.
+7. Disconnect one browser from the network, make a change, reconnect, and verify the local save syncs when the connection returns.
+8. Verify **Export data** and **Import data** still work as manual backup/recovery tools. Import replaces the destination's local workspace.
+9. Verify existing Flashcards, Quizzes, Analytics, and XP still work.
 
 ## Step 11 — Stop the local application when finished
 
