@@ -192,11 +192,30 @@
             if (page.foregroundUrl) {
                 html += '<img class="notes-layer-ink" src="' + this.safeImageURL(page.foregroundUrl) + '" alt="" aria-hidden="true">';
             }
-            if (page.text) {
-                html += '<div class="notes-layer-text" style="color:' + this.getNoteTextColor(stData, page) + ';">' + this.escapeHTML(page.text) + '</div>';
-            }
+            html += this.renderNoteTextBoxes(page, false);
             html += '</div>';
             return html;
+        },
+
+        renderNoteTextBoxes(page, editable) {
+            const boxes = Array.isArray(page.textBoxes) ? page.textBoxes : [];
+            return boxes.map(box => {
+                const id = this.escapeHTML(box.id);
+                const style = 'left:' + Number(box.x || 0) + '%;top:' + Number(box.y || 0) +
+                    '%;width:' + Number(box.width || 42) + '%;height:' + Number(box.height || 12) +
+                    '%;color:' + this.escapeHTML(box.color || '#ffffff') +
+                    ';--notes-text-scale:' + Number(box.fontScale || 2.5) + ';';
+                if (!editable) {
+                    return '<div class="notes-render-text-box" style="' + style + '">' +
+                        this.escapeHTML(box.text || '') + '</div>';
+                }
+                return '<div class="notes-text-box-editor" data-text-box-id="' + id + '" style="' + style + '">' +
+                    '<div class="notes-text-box-handle" onpointerdown="app.startMoveNoteTextBox(event,\'' + id + '\')" title="Drag to move text">↕ Move</div>' +
+                    '<button class="notes-text-box-delete" type="button" title="Delete text" aria-label="Delete text" onclick="event.stopPropagation(); app.deleteNoteTextBox(\'' + id + '\')">×</button>' +
+                    '<textarea aria-label="Text on page" spellcheck="true" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" ' +
+                    'onfocus="app.selectNoteTextBox(\'' + id + '\')" oninput="app.updateNoteTextBox(\'' + id + '\', this.value)">' +
+                    this.escapeHTML(box.text || '') + '</textarea></div>';
+            }).join('');
         },
 
         renderNotesManager(container) {
