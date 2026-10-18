@@ -889,10 +889,7 @@ async function loadUserData(user) {
     }
 
     if (cloudReadFailed && !localData) {
-        throw new Error("PrepPro could not check its saved cloud data. No blank workspace was created. Check the connection and Firestore access, then reload.");
-    }
-    if (cloudReadFailed && cloudExists && !localData) {
-        throw new Error("The saved cloud snapshot could not be downloaded completely. No blank workspace was created. Check the connection and Firestore access, then reload.");
+        throw new Error("PrepPro could not check or download its saved cloud data. No blank workspace was created. Check the connection and Firestore access, then reload.");
     }
 
     const initialData = copyDefaultData();
