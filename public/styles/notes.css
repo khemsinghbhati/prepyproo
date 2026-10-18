@@ -118,7 +118,8 @@
 .notes-canvas-instructions { margin: 0 0 .65rem; padding: .75rem 1rem; color: #94a3b8; background: #0f172a; border: 1px solid #1e293b; border-radius: .75rem; font-size: .72rem; line-height: 1.5; }
 .notes-page-stage {
     position: relative; width: 100%; max-width: 850px; margin: 0 auto; overflow: hidden; isolation: isolate;
-    border: 1px solid #475569; border-radius: .35rem; background: #000; box-shadow: 0 22px 50px #0008; touch-action: none;
+    border: 1px solid #475569; border-radius: .35rem; background: #000; box-shadow: 0 22px 50px #0008;
+    touch-action: none; container-type: inline-size;
 }
 .notes-page-background, .notes-page-image-base, #notes-draw-canvas, #notes-text-layer {
     position: absolute; inset: 0; width: 100%; height: 100%;
