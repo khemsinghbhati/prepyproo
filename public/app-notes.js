@@ -469,21 +469,35 @@
             const canvas = document.getElementById("notes-draw-canvas");
             if (!canvas) return;
             const context = canvas.getContext("2d");
-            this.noteDraft = this.noteDraft || { mode: "type", inkColor: "#ffffff", brushSize: 5, drawing: false, hasInk: false };
+            if (!this.noteDraft) this.noteDraft = {
+                mode: "draw", inkColor: "#ffffff", brushSize: 5, drawing: false,
+                inkChanged: false, loadingInk: false, textBoxes: structuredClone(page.textBoxes || []),
+                selectedTextBoxId: null
+            };
             this.noteDraft.drawing = false;
             if (page.foregroundUrl) {
+                this.noteDraft.loadingInk = true;
+                canvas.style.pointerEvents = "none";
                 loadImage(page.foregroundUrl).then(image => {
                     if (!canvas.isConnected) return;
                     context.clearRect(0, 0, canvas.width, canvas.height);
                     context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
-                }).catch(error => console.warn("Could not load saved note strokes:", error));
+                }).catch(error => {
+                    console.warn("Could not load saved note strokes:", error);
+                    this.showToast("Saved drawing could not be loaded. Avoid saving until it is available.", "error");
+                }).finally(() => {
+                    if (!canvas.isConnected) return;
+                    if (this.noteDraft) this.noteDraft.loadingInk = false;
+                    this.setNoteTool(this.noteDraft ? this.noteDraft.mode : "draw");
+                });
             } else {
                 context.clearRect(0, 0, canvas.width, canvas.height);
             }
             canvas.onpointerdown = event => {
-                if (!this.noteDraft || this.noteDraft.mode === "type") return;
+                if (!this.noteDraft || !["draw", "erase"].includes(this.noteDraft.mode) || this.noteDraft.loadingInk) return;
                 event.preventDefault();
                 this.noteDraft.drawing = true;
+                this.noteDraft.inkChanged = true;
                 canvas.setPointerCapture(event.pointerId);
                 const rect = canvas.getBoundingClientRect();
                 const x = (event.clientX - rect.left) * canvas.width / rect.width;
@@ -497,10 +511,9 @@
                 context.globalCompositeOperation = this.noteDraft.mode === "erase" ? "destination-out" : "source-over";
                 context.lineTo(x + 0.1, y + 0.1);
                 context.stroke();
-                this.noteDraft.hasInk = true;
             };
             canvas.onpointermove = event => {
-                if (!this.noteDraft || !this.noteDraft.drawing || this.noteDraft.mode === "type") return;
+                if (!this.noteDraft || !this.noteDraft.drawing || !["draw", "erase"].includes(this.noteDraft.mode)) return;
                 const rect = canvas.getBoundingClientRect();
                 const x = (event.clientX - rect.left) * canvas.width / rect.width;
                 const y = (event.clientY - rect.top) * canvas.height / rect.height;
@@ -517,7 +530,7 @@
             canvas.onpointerup = stopDrawing;
             canvas.onpointercancel = stopDrawing;
             canvas.onlostpointercapture = stopDrawing;
-            this.setNoteTool(this.noteDraft.mode || "type");
+            this.setNoteTool(this.noteDraft.mode || "draw");
         },
 
         setNoteTool(mode) {
