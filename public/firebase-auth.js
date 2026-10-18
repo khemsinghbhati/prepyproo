@@ -45,6 +45,7 @@ let pendingCloudRemote = null;
 let lastAppliedCloudAt = 0;
 let cloudBaselineKnown = false;
 let receivedInitialCloudSnapshot = false;
+let cloudSnapshotReadSerial = 0;
 let remoteApplyInProgress = false;
 
 const CLOUD_UPDATED_AT_FIELD = "_prepProCloudUpdatedAt";
@@ -605,6 +606,7 @@ function startCloudSync(uid) {
     cloudUnsubscribe = onSnapshot(legacyUserDocument(uid), { includeMetadataChanges: true }, async snapshot => {
         if (!currentUser || currentUser.uid !== uid || snapshot.metadata.fromCache ||
             snapshot.metadata.hasPendingWrites) return;
+        const readSerial = ++cloudSnapshotReadSerial;
         const isInitialAuthoritativeSnapshot = !receivedInitialCloudSnapshot;
         const hadCloudBaseline = cloudBaselineKnown;
         const previousCloudVersion = lastAppliedCloudAt;
@@ -630,6 +632,7 @@ function startCloudSync(uid) {
             setSaveStatus("Saved locally · cloud snapshot download failed; retrying on next update");
             return;
         }
+        if (readSerial !== cloudSnapshotReadSerial || !currentUser || currentUser.uid !== uid) return;
         if (!isValidData(remoteData)) {
             cloudBaselineKnown = true;
             lastAppliedCloudAt = remoteUpdatedAt;
@@ -871,6 +874,10 @@ async function loadUserData(user) {
         return remoteData;
     }
 
+    if (cloudReadFailed && cloudExists) {
+        throw new Error("The saved cloud snapshot could not be downloaded completely. No blank workspace was created. Check the connection and Firestore access, then reload.");
+    }
+
     const initialData = copyDefaultData();
     await writeLocalUserData(uid, initialData);
     if (cloudReadFailed || cloudIsCached) {
@@ -923,6 +930,7 @@ window.addEventListener("offline", () => {
 
 onAuthStateChanged(auth, async (user) => {
     const requestId = ++authRequestId;
+    cloudSnapshotReadSerial += 1;
     cloudBaselineKnown = false;
     lastAppliedCloudAt = 0;
     if (cloudUnsubscribe) cloudUnsubscribe();
