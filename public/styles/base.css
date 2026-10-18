@@ -1,0 +1,110 @@
+/* =========================================================
+   PrepPro - Global Styles
+   ========================================================= */
+
+/* =========================================================
+   Theme Variables
+   ========================================================= */
+
+   :root {
+    color-scheme: dark;
+
+    --bg-primary: #020617;
+    --bg-secondary: #0f172a;
+    --bg-card: #111827;
+    --border-color: #1e293b;
+
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+
+    --accent-blue: #3b82f6;
+    --accent-indigo: #6366f1;
+    --accent-green: #22c55e;
+    --accent-red: #ef4444;
+    --accent-yellow: #eab308;
+
+    --scrollbar-track: #0f172a;
+    --scrollbar-thumb: #334155;
+    --scrollbar-thumb-hover: #475569;
+
+    --transition-fast: 0.2s ease;
+    --transition-normal: 0.3s ease;
+}
+
+/* =========================================================
+   Global Reset and Typography
+   ========================================================= */
+
+* {
+    box-sizing: border-box;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Consistent form controls */
+
+button,
+input,
+textarea,
+select {
+    font: inherit;
+}
+
+button {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+img,
+svg {
+    max-width: 100%;
+}
+
+input,
+textarea,
+select {
+    max-width: 100%;
+}
+
+textarea {
+    resize: vertical;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: #64748b;
+    opacity: 1;
+}
+
+/* =========================================================
+   Keyboard Accessibility
+   ========================================================= */
+
+:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 3px;
+}
+
+button:focus:not(:focus-visible) {
+    outline: none;
+}
+

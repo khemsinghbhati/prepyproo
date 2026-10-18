@@ -84,6 +84,10 @@ PrepPro is a serverless, single-page learning app that helps students organize s
 
 > **Timing note:** Question-level times are recorded for new attempts. Older attempts created before per-question timing was saved may not contain individual durations; the app reports those values as not recorded rather than estimating them.
 
+## 🧱 Code Structure
+
+The frontend is separated into feature-focused JavaScript files and responsibility-focused CSS files so collaborators can work in parallel. CSS modules live under `public/styles/`. See [the architecture and collaboration guide](docs/ARCHITECTURE.md) for module ownership, dependency rules, and the recommended pull-request workflow.
+
 ## 🧪 Local Testing with Firebase Emulators
 
 For the complete step-by-step setup and testing instructions, see [How to test Locally.md](How%20to%20test%20Locally.md).

@@ -1,0 +1,30 @@
+/* =========================================================
+   Modal and Overlay Styles
+   ========================================================= */
+
+.modal-backdrop {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    background-color: rgba(2, 6, 23, 0.8);
+}
+
+/* Prevent modal content from exceeding the viewport */
+
+#modal-content {
+    min-height: 0;
+    overscroll-behavior: contain;
+}
+
+#modal-content > * {
+    max-width: 100%;
+}
+
+/* =========================================================
+   Toast Notifications
+   ========================================================= */
+
+#toast {
+    max-width: calc(100vw - 2rem);
+    overflow-wrap: anywhere;
+}
+
