@@ -183,9 +183,6 @@
             if (page.text) {
                 html += '<div class="notes-layer-text" style="color:' + this.getNoteTextColor(stData, page) + ';">' + this.escapeHTML(page.text) + '</div>';
             }
-            if (!page.imagePageUrl && !page.foregroundUrl && !page.text && page.imageUrl) {
-                html += '<img class="notes-layer-base" src="' + this.safeImageURL(page.imageUrl) + '" alt="Saved notes page">';
-            }
             html += '</div>';
             return html;
         },
