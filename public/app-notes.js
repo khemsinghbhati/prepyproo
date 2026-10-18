@@ -428,15 +428,16 @@
             ) || "Custom";
             let html = '<div class="max-w-7xl mx-auto notes-view notes-editor-view">' +
                 '<div class="notes-editor-header"><div><p class="notes-eyebrow">NOTES PAGE EDITOR</p><h1>' + this.escapeHTML(stData.subtopic.name) + '</h1>' +
-                '<p class="notes-muted">Use Type to write, Draw to sketch, and Erase to remove strokes.</p></div>' +
+                '<p class="notes-muted">Draw freely. Choose T, then click anywhere on the page to insert a movable text box.</p></div>' +
                 '<div class="notes-heading-actions"><button class="notes-button notes-button-secondary" onclick="app.returnToNotesManager()">Cancel / Back</button>' +
                 '<button class="notes-button notes-button-primary" onclick="app.saveNotePage()">Confirm & Save Page</button></div></div>' +
                 '<div class="notes-editor-layout"><aside class="notes-toolbar">' +
-                '<div class="notes-tool-group"><span class="notes-tool-label">Tools</span><button id="note-tool-type" class="notes-tool-button is-active" aria-pressed="true" onclick="app.setNoteTool(\'type\')">T&nbsp; Type</button>' +
-                '<button id="note-tool-draw" class="notes-tool-button" aria-pressed="false" onclick="app.setNoteTool(\'draw\')">✎ Draw</button>' +
+                '<div class="notes-tool-group"><span class="notes-tool-label">Tools</span><button id="note-tool-text" class="notes-tool-button" aria-pressed="false" onclick="app.setNoteTool(\'text-place\')">T&nbsp; Add text</button>' +
+                '<button id="note-tool-draw" class="notes-tool-button is-active" aria-pressed="true" onclick="app.setNoteTool(\'draw\')">✎ Draw</button>' +
                 '<button id="note-tool-erase" class="notes-tool-button" aria-pressed="false" onclick="app.setNoteTool(\'erase\')">⌫ Erase strokes</button></div>' +
-                '<label class="notes-tool-field">Text / pen colour<input id="note-ink-color" type="color" value="' + textColor + '" oninput="app.updateNoteInkColor(this.value)"></label>' +
+                '<label class="notes-tool-field">Pen / selected text colour<input id="note-ink-color" type="color" value="' + textColor + '" oninput="app.updateNoteInkColor(this.value)"></label>' +
                 '<label class="notes-tool-field">Brush size<input type="range" min="2" max="28" value="5" oninput="app.setNoteBrushSize(this.value)"></label>' +
+                '<label class="notes-tool-field">Selected text size<input id="note-text-scale" type="range" min="1" max="8" step="0.25" value="2.5" oninput="app.setNoteTextScale(this.value)"></label>' +
                 '<label class="notes-tool-field">Page size<select id="note-current-size" onchange="app.resizeCurrentNotePage(this.value)">' + this.notePageSizeOptions(pageSizePreset) + '</select></label>' +
                 '<p class="notes-tool-hint">The size menu changes this page and the default for new pages.</p>' +
                 '<div class="notes-background-tools"><span class="notes-tool-label">Page background</span>' +
@@ -448,15 +449,14 @@
                 '<label class="notes-button notes-button-secondary notes-full-button" for="notes-bg-file">Upload custom background</label>' +
                 '<input id="notes-bg-file" class="notes-visually-hidden" type="file" accept="image/*" onchange="app.uploadNoteBackgroundFile(event)">' +
                 '<p class="notes-tool-hint">A scope background updates pages at that level unless a more specific background overrides it.</p></div></aside>' +
-                '<div class="notes-canvas-column"><div class="notes-canvas-instructions"><span>Tip: switch to Draw to sketch. Eraser removes pen strokes; typed text stays editable.</span></div>' +
-                '<div class="notes-page-stage" id="notes-page-stage" style="aspect-ratio:' + dimensions.width + ' / ' + dimensions.height + ';">' +
+                '<div class="notes-canvas-column"><div class="notes-canvas-instructions"><span>Draw with your mouse, finger or stylus. Choose T and click the page to add text. Drag a text box by its Move handle.</span></div>' +
+                '<div class="notes-page-stage" id="notes-page-stage" onclick="app.handleNoteStageClick(event)" style="aspect-ratio:' + dimensions.width + ' / ' + dimensions.height + ';">' +
                 '<div id="notes-page-background" class="notes-page-background" style="' + this.noteBackgroundStyle(bg) + '"></div>';
             if (page.imagePageUrl) {
                 html += '<img id="notes-page-image-base" class="notes-page-image-base" src="' + this.safeImageURL(page.imagePageUrl) + '" alt="Uploaded image page">';
             }
             html += '<canvas id="notes-draw-canvas" width="' + dimensions.width + '" height="' + dimensions.height + '" aria-label="Drawing canvas"></canvas>' +
-                '<textarea id="notes-text-layer" spellcheck="true" aria-label="Type notes on this page" placeholder="Start typing your notes here..." style="color:' + textColor + ';" oninput="app.updateNoteText(this.value)">' +
-                this.escapeHTML(page.text || "") + '</textarea></div>' +
+                '<div id="notes-text-box-layer">' + this.renderNoteTextBoxes({ textBoxes: this.noteDraft.textBoxes || [] }, true) + '</div></div>' +
                 '<div class="notes-save-row"><button class="notes-button notes-button-secondary" onclick="app.clearNoteStrokes()">Clear all pen strokes</button>' +
                 '<span id="notes-save-status" role="status">Your changes upload to ImgBB when you confirm the page.</span>' +
                 '<button class="notes-button notes-button-primary" onclick="app.saveNotePage()">Confirm & Save Page</button></div></div></div></div>';
