@@ -19,6 +19,7 @@ PrepPro is a serverless, single-page learning app that helps students organize s
 - **Flashcards:** Add front/back text and images to study cards.
 - **Question sets:** Create Multiple Choice (MCQ), Multiple Select (MSQ), and Numerical questions.
 - **Image attachments:** Upload images for flashcards and quiz questions through ImgBB, or provide an HTTP/HTTPS image URL.
+- **Multi-page Notes:** Create pages at subtopic level, draw and erase, add movable text boxes with the T tool, upload image pages, reorder pages, and apply classic or custom backgrounds.
 
 ### Learner experience
 
