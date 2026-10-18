@@ -384,6 +384,153 @@ async function loadUserData(user) {
     return initialData;
 }
 
+let deviceTransfer = null;
+const TRANSFER_LABEL = "PrepPro";
+const TRANSFER_MAX_CHARS = 100 * 1024 * 1024;
+const TRANSFER_CHUNK_CHARS = 12000;
+
+function transferEscape(value) {
+    return window.app?.escapeHTML
+        ? window.app.escapeHTML(value)
+        : String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
+}
+
+function transferNonce() {
+    return crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+function updateTransferStatus(message) {
+    const status = document.getElementById("device-transfer-status");
+    if (status) status.textContent = message;
+}
+
+function closeDeviceTransfer() {
+    if (!deviceTransfer) return;
+    try { deviceTransfer.channel?.close(); } catch {}
+    try { deviceTransfer.pc?.close(); } catch {}
+    deviceTransfer = null;
+}
+
+function waitForIceGathering(pc) {
+    if (pc.iceGatheringState === "complete") return Promise.resolve();
+    return new Promise((resolve, reject) => {
+        const cleanup = () => {
+            clearTimeout(timeout);
+            pc.removeEventListener("icegatheringstatechange", onChange);
+        };
+        const onChange = () => {
+            if (pc.iceGatheringState === "complete") {
+                cleanup();
+                resolve();
+            }
+        };
+        const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error("Network setup timed out while preparing the device connection. Try again."));
+        }, 20000);
+        pc.addEventListener("icegatheringstatechange", onChange);
+    });
+}
+
+function makeDevicePeerConnection() {
+    if (!("RTCPeerConnection" in window)) {
+        throw new Error("This browser does not support direct device transfer. Use Export/Import data instead.");
+    }
+    return new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+}
+
+function sendTransferJson(channel, payload) {
+    return new Promise((resolve, reject) => {
+        const send = () => {
+            if (channel.readyState !== "open") {
+                reject(new Error("The device connection closed."));
+                return;
+            }
+            try {
+                channel.send(JSON.stringify(payload));
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
+        };
+        if (channel.bufferedAmount < 512 * 1024) {
+            send();
+            return;
+        }
+        const onLow = () => {
+            channel.removeEventListener("close", onClose);
+            send();
+        };
+        const onClose = () => {
+            channel.removeEventListener("bufferedamountlow", onLow);
+            reject(new Error("The device connection closed."));
+        };
+        channel.addEventListener("bufferedamountlow", onLow, { once: true });
+        channel.addEventListener("close", onClose, { once: true });
+    });
+}
+
+async function sendCurrentDeviceData(session) {
+    if (!currentUser || !session || session !== deviceTransfer || session.role !== "send") return;
+    const normalized = window.app?.normalizeData ? window.app.normalizeData(structuredClone(data)) : structuredClone(data);
+    const payload = {
+        app: TRANSFER_LABEL,
+        formatVersion: 1,
+        userId: currentUser.uid,
+        exportedAt: new Date().toISOString(),
+        data: normalized
+    };
+    const serialized = JSON.stringify(payload);
+    if (serialized.length > TRANSFER_MAX_CHARS) {
+        showToast("This data set is too large for direct transfer. Use Export/Import data instead.", "error");
+        return;
+    }
+    const totalParts = Math.ceil(serialized.length / TRANSFER_CHUNK_CHARS);
+    try {
+        await sendTransferJson(session.channel, {
+            type: "start", userId: currentUser.uid, nonce: session.nonce,
+            totalParts, totalChars: serialized.length
+        });
+        for (let index = 0; index < totalParts; index += 1) {
+            await sendTransferJson(session.channel, {
+                type: "chunk", index,
+                content: serialized.slice(index * TRANSFER_CHUNK_CHARS, (index + 1) * TRANSFER_CHUNK_CHARS)
+            });
+            if (index % 50 === 0 || index === totalParts - 1) {
+                updateTransferStatus("Sending data… " +
+                    Math.min(serialized.length, (index + 1) * TRANSFER_CHUNK_CHARS).toLocaleString() +
+                    " / " + serialized.length.toLocaleString() + " characters");
+            }
+        }
+        await sendTransferJson(session.channel, { type: "finish", userId: currentUser.uid, nonce: session.nonce });
+        updateTransferStatus("Transfer sent. Confirm the replacement on the receiving device.");
+    } catch (error) {
+        console.error("Device transfer send failed:", error);
+        updateTransferStatus("Transfer failed: " + error.message);
+        showToast("Device transfer failed. You can use Export/Import data instead.", "error");
+    }
+}
+
+function setDeviceTransferChannel(channel, session) {
+    session.channel = channel;
+    channel.bufferedAmountLowThreshold = 128 * 1024;
+    channel.onopen = () => {
+        if (session.role === "send") {
+            updateTransferStatus("Connected. Sending the latest local data…");
+            sendCurrentDeviceData(session);
+        } else {
+            updateTransferStatus("Connected. Waiting for the other device to send its data…");
+        }
+    };
+    channel.onclose = () => {
+        if (session === deviceTransfer) updateTransferStatus("Device connection closed.");
+    };
+    channel.onerror = () => {
+        if (session === deviceTransfer) updateTransferStatus("The device connection encountered an error.");
+    };
+    channel.onmessage = event => handleDeviceTransferMessage(event, session);
+}
+
 window.loginWithGoogle = async function () {
     setStatus("Opening sign-in window...");
     try {
