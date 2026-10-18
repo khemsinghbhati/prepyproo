@@ -162,8 +162,11 @@
         },
 
         getNoteTextColor(stData, page) {
-            if (page && validColor(page.textColor)) return page.textColor;
             const bg = this.getNoteBackground(stData, page);
+            if (page && validColor(page.textColor)) {
+                if (bg.type === "color" && bg.value.toLowerCase() === "#ffffff" && page.textColor.toLowerCase() === "#ffffff") return "#111827";
+                return page.textColor;
+            }
             return bg.type === "color" && bg.value.toLowerCase() === "#ffffff" ? "#111827" : "#ffffff";
         },
 
