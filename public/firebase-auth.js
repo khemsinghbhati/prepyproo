@@ -180,7 +180,7 @@ async function writeLocalUserData(uid, userData) {
     return record;
 }
 
-async async function requestPersistentStorage() {
+async function requestPersistentStorage() {
     try {
         if (navigator.storage?.persist) {
             const persisted = await navigator.storage.persist();
@@ -1034,7 +1034,7 @@ window.acceptPrepProDeviceTransfer = async function () {
     }
     try {
         const normalized = window.app?.normalizeData ? window.app.normalizeData(envelope.data) : envelope.data;
-        await writeLocalUserData(currentUser.uid, normalized);
+        await window.saveUserData(normalized);
         data = normalized;
         try { await sendTransferJson(session.channel, { type: "accepted", userId: currentUser.uid, nonce: session.nonce }); } catch {}
         window.app?.closeModal?.();
