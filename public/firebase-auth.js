@@ -531,6 +531,93 @@ function setDeviceTransferChannel(channel, session) {
     channel.onmessage = event => handleDeviceTransferMessage(event, session);
 }
 
+function showDeviceTransferSendModal(offerCode) {
+    const html =
+        '<div class="space-y-4">' +
+        '<p class="text-sm text-slate-300 leading-relaxed">Keep this device online. Copy the offer code, open PrepPro on your other device, choose <strong>Receive from device</strong>, and paste the code. Then paste the answer code from that device below.</p>' +
+        '<label class="block text-xs text-slate-400 font-bold mb-2">Offer code</label>' +
+        '<textarea id="device-transfer-offer-code" rows="5" readonly class="w-full p-3 rounded-xl border border-slate-700 bg-slate-950 text-slate-200 text-xs font-mono">' + transferEscape(offerCode) + '</textarea>' +
+        '<button type="button" onclick="window.copyPrepProTransferCode(\'device-transfer-offer-code\')" class="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white font-bold">Copy offer code</button>' +
+        '<label class="block text-xs text-slate-400 font-bold mb-2">Answer code from the receiving device</label>' +
+        '<textarea id="device-transfer-answer-code" rows="5" placeholder="Paste the answer code here…" class="w-full p-3 rounded-xl border border-slate-700 bg-slate-950 text-slate-200 text-xs font-mono"></textarea>' +
+        '<button type="button" onclick="window.completePrepProDeviceSend()" class="w-full px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black">Connect and send latest data</button>' +
+        '<p id="device-transfer-status" role="status" class="text-xs text-slate-400">Waiting for the receiving device.</p>' +
+        '</div>';
+    window.app.showModal("Send data to another device", html);
+}
+
+window.copyPrepProTransferCode = async function (elementId) {
+    const field = document.getElementById(elementId);
+    if (!field) return;
+    try {
+        await navigator.clipboard.writeText(field.value);
+        showToast("Device-transfer code copied.", "success");
+    } catch (error) {
+        field.focus();
+        field.select();
+        try {
+            const copied = document.execCommand("copy");
+            if (copied) showToast("Device-transfer code copied.", "success");
+            else showToast("Copy failed. Select the code and copy it manually.", "error");
+        } catch {
+            showToast("Select the code and copy it manually.", "error");
+        }
+    }
+};
+
+window.startPrepProDeviceSend = async function () {
+    if (!currentUser) return showToast("Sign in before transferring data.", "error");
+    try {
+        closeDeviceTransfer();
+        const pc = makeDevicePeerConnection();
+        const session = { role: "send", pc, channel: null, nonce: transferNonce() };
+        deviceTransfer = session;
+        const channel = pc.createDataChannel("preppro-transfer", { ordered: true });
+        setDeviceTransferChannel(channel, session);
+        pc.onconnectionstatechange = () => {
+            if (session !== deviceTransfer) return;
+            if (["failed", "disconnected"].includes(pc.connectionState)) {
+                updateTransferStatus("Connection failed. Your network may block direct connections; use Export/Import as a fallback.");
+            }
+        };
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await waitForIceGathering(pc);
+        if (session !== deviceTransfer) return;
+        const code = JSON.stringify({
+            app: TRANSFER_LABEL,
+            formatVersion: 1,
+            kind: "offer",
+            userId: currentUser.uid,
+            nonce: session.nonce,
+            sdp: pc.localDescription.sdp
+        });
+        showDeviceTransferSendModal(code);
+    } catch (error) {
+        console.error(error);
+        closeDeviceTransfer();
+        showToast("Could not prepare device transfer: " + error.message, "error");
+    }
+};
+
+window.completePrepProDeviceSend = async function () {
+    const session = deviceTransfer;
+    if (!session || session.role !== "send" || !currentUser) return showToast("Start a new device transfer first.", "error");
+    try {
+        const raw = document.getElementById("device-transfer-answer-code")?.value || "";
+        const answer = JSON.parse(raw);
+        if (answer.app !== TRANSFER_LABEL || answer.formatVersion !== 1 ||
+            answer.kind !== "answer" || answer.userId !== currentUser.uid ||
+            answer.nonce !== session.nonce || typeof answer.sdp !== "string") {
+            throw new Error("The answer code is invalid or belongs to a different account/transfer.");
+        }
+        await session.pc.setRemoteDescription({ type: "answer", sdp: answer.sdp });
+        updateTransferStatus("Answer accepted. Connecting to the receiving device…");
+    } catch (error) {
+        showToast("Could not connect: " + error.message, "error");
+    }
+};
+
 window.loginWithGoogle = async function () {
     setStatus("Opening sign-in window...");
     try {
