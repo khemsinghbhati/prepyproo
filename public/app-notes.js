@@ -562,6 +562,72 @@
             });
         },
 
+        handleNoteStageClick(event) {
+            if (!this.noteDraft || this.noteDraft.mode !== "text") return;
+            if (event.target.closest(".notes-text-box-editor")) return;
+            const stage = document.getElementById("notes-page-stage");
+            if (!stage) return;
+            const rect = stage.getBoundingClientRect();
+            const x = Math.max(0, Math.min(62, ((event.clientX - rect.left) / rect.width) * 100));
+            const y = Math.max(0, Math.min(82, ((event.clientY - rect.top) / rect.height) * 100));
+            const color = document.getElementById("note-ink-color")?.value || this.noteDraft.inkColor || "#ffffff";
+            const fontScale = Number(document.getElementById("note-text-scale")?.value || 2.5);
+            const box = {
+                id: generateId(), x, y, width: 36, height: 16, text: "",
+                color: validColor(color) ? color : "#ffffff", fontScale
+            };
+            this.noteDraft.textBoxes.push(box);
+            this.noteDraft.selectedTextBoxId = box.id;
+            this.refreshNoteTextBoxes(box.id);
+            event.stopPropagation();
+        },
+
+        refreshNoteTextBoxes(focusId = null) {
+            const layer = document.getElementById("notes-text-box-layer");
+            if (!layer || !this.noteDraft) return;
+            layer.innerHTML = this.renderNoteTextBoxes({ textBoxes: this.noteDraft.textBoxes || [] }, true);
+            this.setNoteTool(this.noteDraft.mode || "draw");
+            if (focusId) layer.querySelector('[data-text-box-id="' + focusId + '"] textarea')?.focus({ preventScroll: true });
+        },
+
+        selectNoteTextBox(boxId) {
+            if (!this.noteDraft) return;
+            const box = this.noteDraft.textBoxes.find(item => item.id === boxId);
+            if (!box) return;
+            this.noteDraft.selectedTextBoxId = boxId;
+            const color = document.getElementById("note-ink-color");
+            const size = document.getElementById("note-text-scale");
+            if (color) color.value = validColor(box.color) ? box.color : "#ffffff";
+            if (size) size.value = String(box.fontScale || 2.5);
+            document.querySelectorAll(".notes-text-box-editor").forEach(element => {
+                element.classList.toggle("is-selected", element.dataset.textBoxId === boxId);
+            });
+        },
+
+        updateNoteTextBox(boxId, value) {
+            if (!this.noteDraft) return;
+            const box = this.noteDraft.textBoxes.find(item => item.id === boxId);
+            if (box) box.text = String(value ?? "");
+        },
+
+        setNoteTextScale(value) {
+            if (!this.noteDraft) return;
+            const scale = Math.min(8, Math.max(1, Number(value) || 2.5));
+            const id = this.noteDraft.selectedTextBoxId;
+            const box = this.noteDraft.textBoxes.find(item => item.id === id);
+            if (!box) return;
+            box.fontScale = scale;
+            const element = document.querySelector('[data-text-box-id="' + id + '"]');
+            if (element) element.style.setProperty("--notes-text-scale", scale);
+        },
+
+        deleteNoteTextBox(boxId) {
+            if (!this.noteDraft) return;
+            this.noteDraft.textBoxes = this.noteDraft.textBoxes.filter(item => item.id !== boxId);
+            if (this.noteDraft.selectedTextBoxId === boxId) this.noteDraft.selectedTextBoxId = null;
+            this.refreshNoteTextBoxes();
+        },
+
         setNoteBrushSize(value) {
             if (this.noteDraft) this.noteDraft.brushSize = Math.min(28, Math.max(2, Number(value) || 5));
         },
