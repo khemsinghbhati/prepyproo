@@ -534,38 +534,32 @@
         },
 
         setNoteTool(mode) {
-            if (!this.noteDraft) this.noteDraft = { mode: "type", inkColor: "#ffffff", brushSize: 5, drawing: false, hasInk: false };
-            this.noteDraft.mode = ["type", "draw", "erase"].includes(mode) ? mode : "type";
+            if (!this.noteDraft) return;
+            this.noteDraft.mode = ["text", "draw", "erase"].includes(mode) ? mode : "draw";
             const canvas = document.getElementById("notes-draw-canvas");
-            const textarea = document.getElementById("notes-text-layer");
+            const textLayer = document.getElementById("notes-text-box-layer");
+            const stage = document.getElementById("notes-page-stage");
+            const canDraw = ["draw", "erase"].includes(this.noteDraft.mode) && !this.noteDraft.loadingInk;
             if (canvas) {
-                canvas.style.pointerEvents = this.noteDraft.mode === "type" ? "none" : "auto";
+                canvas.style.pointerEvents = canDraw ? "auto" : "none";
                 canvas.style.cursor = this.noteDraft.mode === "erase" ? "cell" : "crosshair";
             }
-            if (textarea) {
-                textarea.style.pointerEvents = this.noteDraft.mode === "type" ? "auto" : "none";
-                textarea.style.cursor = this.noteDraft.mode === "type" ? "text" : "default";
-                if (this.noteDraft.mode === "type") textarea.focus({ preventScroll: true });
+            if (textLayer) {
+                textLayer.style.pointerEvents = this.noteDraft.mode === "text" ? "auto" : "none";
+                textLayer.querySelectorAll(".notes-text-box-editor").forEach(box => {
+                    box.style.pointerEvents = this.noteDraft.mode === "text" ? "auto" : "none";
+                });
             }
-            ["type", "draw", "erase"].forEach(tool => {
+            if (stage) {
+                stage.style.cursor = this.noteDraft.mode === "text" ? "text" : (this.noteDraft.mode === "erase" ? "cell" : "crosshair");
+                stage.style.touchAction = canDraw ? "none" : "auto";
+            }
+            ["text", "draw", "erase"].forEach(tool => {
                 const button = document.getElementById("note-tool-" + tool);
                 if (!button) return;
                 button.classList.toggle("is-active", this.noteDraft.mode === tool);
                 button.setAttribute("aria-pressed", this.noteDraft.mode === tool ? "true" : "false");
             });
-        },
-
-        updateNoteText() {
-            const text = document.getElementById("notes-text-layer");
-            if (text && this.noteDraft) this.noteDraft.text = text.value;
-        },
-
-        updateNoteInkColor(color) {
-            if (!validColor(color)) return;
-            if (!this.noteDraft) this.noteDraft = { mode: "type", inkColor: color, brushSize: 5, drawing: false, hasInk: false };
-            this.noteDraft.inkColor = color;
-            const text = document.getElementById("notes-text-layer");
-            if (text) text.style.color = color;
         },
 
         setNoteBrushSize(value) {
