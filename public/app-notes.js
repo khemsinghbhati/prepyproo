@@ -210,7 +210,7 @@
                         this.escapeHTML(box.text || '') + '</div>';
                 }
                 return '<div class="notes-text-box-editor" data-text-box-id="' + id + '" style="' + style + '">' +
-                    '<div class="notes-text-box-handle" onpointerdown="app.startMoveNoteTextBox(event,\'' + id + '\')" title="Drag to move text">↕ Move</div>' +
+                    '<div class="notes-text-box-handle" onpointerdown="app.startMoveNoteTextBox(event,\'' + id + '\')" onclick="event.stopPropagation()" title="Drag to move text">↕ Move</div>' +
                     '<button class="notes-text-box-delete" type="button" title="Delete text" aria-label="Delete text" onclick="event.stopPropagation(); app.deleteNoteTextBox(\'' + id + '\')">×</button>' +
                     '<textarea aria-label="Text on page" spellcheck="true" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()" ' +
                     'onfocus="app.selectNoteTextBox(\'' + id + '\')" oninput="app.updateNoteTextBox(\'' + id + '\', this.value)">' +
@@ -482,9 +482,11 @@
                     if (!canvas.isConnected) return;
                     context.clearRect(0, 0, canvas.width, canvas.height);
                     context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+                    if (this.noteDraft) this.noteDraft.inkLoadFailed = false;
                 }).catch(error => {
                     console.warn("Could not load saved note strokes:", error);
-                    this.showToast("Saved drawing could not be loaded. Avoid saving until it is available.", "error");
+                    if (this.noteDraft) this.noteDraft.inkLoadFailed = true;
+                    this.showToast("Saved drawing could not be loaded. Reopen this page when online before saving.", "error");
                 }).finally(() => {
                     if (!canvas.isConnected) return;
                     if (this.noteDraft) this.noteDraft.loadingInk = false;
@@ -539,7 +541,7 @@
             const canvas = document.getElementById("notes-draw-canvas");
             const textLayer = document.getElementById("notes-text-box-layer");
             const stage = document.getElementById("notes-page-stage");
-            const canDraw = ["draw", "erase"].includes(this.noteDraft.mode) && !this.noteDraft.loadingInk;
+            const canDraw = ["draw", "erase"].includes(this.noteDraft.mode) && !this.noteDraft.loadingInk && !this.noteDraft.inkLoadFailed;
             if (canvas) {
                 canvas.style.pointerEvents = canDraw ? "auto" : "none";
                 canvas.style.cursor = this.noteDraft.mode === "erase" ? "cell" : "crosshair";
@@ -851,6 +853,7 @@
             const status = document.getElementById("notes-save-status");
             if (!stData || !page || !canvas) return;
             if (this.noteDraft?.loadingInk) return this.showToast("Wait for the saved drawing to finish loading.", "error");
+            if (this.noteDraft?.inkLoadFailed) return this.showToast("The old drawing has not loaded; reopen the page before saving to avoid losing it.", "error");
             if (this.imageUploadInProgress) return this.showToast("Wait for the current image upload to finish.", "error");
 
             const width = canvas.width;
