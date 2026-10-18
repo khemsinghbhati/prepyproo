@@ -44,6 +44,8 @@ const LOCAL_DB_NAME = "preppro-local-data";
 const LOCAL_DB_VERSION = 1;
 const LOCAL_STORE_NAME = "users";
 const LEGACY_MIGRATION_MARKER = "_prepProLocalOnlyMigrationAt";
+const OLD_LOCAL_KEY = (uid) => `prepProData_v12_${uid}`;
+const OLD_PENDING_KEY = (uid) => `prepProPending_v1_${uid}`;
 const copyDefaultData = () => structuredClone(DEFAULT_DATA);
 const legacyUserDocument = (uid) => doc(legacyDb, "users", uid);
 
@@ -287,6 +289,34 @@ window.importPrepProData = async function (event) {
     }
 };
 
+function readPreviousLocalSnapshot(uid) {
+    // Upgrade path for the previous release's localStorage cache/pending queue.
+    // A pending snapshot is the most recent unsynced version and takes precedence.
+    for (const key of [OLD_PENDING_KEY(uid), OLD_LOCAL_KEY(uid)]) {
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+            const parsed = JSON.parse(raw);
+            const candidate = key === OLD_PENDING_KEY(uid) ? parsed?.data : parsed;
+            if (isValidData(candidate)) return candidate;
+        } catch (error) {
+            console.warn("Could not migrate previous local cache:", error);
+        }
+    }
+    return null;
+}
+
+async function markLegacyMigrated(uid) {
+    try {
+        await setDoc(legacyUserDocument(uid), {
+            [LEGACY_MIGRATION_MARKER]: new Date().toISOString()
+        }, { merge: true });
+    } catch (error) {
+        // This marker is migration-only; ordinary app saves never write Firestore.
+        console.warn("Could not mark the legacy data as migrated:", error);
+    }
+}
+
 async function loadUserData(user) {
     const uid = user.uid;
     loadNotice = "";
@@ -294,6 +324,14 @@ async function loadUserData(user) {
     if (localRecord) {
         latestLocalSaveAt = Number(localRecord.updatedAt || 0);
         return localRecord.data;
+    }
+
+    const previousLocalSnapshot = readPreviousLocalSnapshot(uid);
+    if (previousLocalSnapshot) {
+        await writeLocalUserData(uid, previousLocalSnapshot);
+        await markLegacyMigrated(uid);
+        loadNotice = "Your previous local data was migrated to this browser. Export it to transfer it to other devices.";
+        return previousLocalSnapshot;
     }
 
     // One-time migration path for data created before the local-first release.
@@ -315,18 +353,18 @@ async function loadUserData(user) {
                 throw new Error("Your previous cloud data has an unexpected format.");
             }
             await writeLocalUserData(uid, cleanLegacyData);
-            try {
-                await setDoc(legacyUserDocument(uid), {
-                    [LEGACY_MIGRATION_MARKER]: new Date().toISOString()
-                }, { merge: true });
-            } catch (markerError) {
-                console.warn("Could not mark legacy migration; this device's local copy was saved.", markerError);
-            }
+            await markLegacyMigrated(uid);
             loadNotice = "Your old cloud data was migrated to this browser. Export it to transfer it to other devices.";
             return cleanLegacyData;
         }
     } catch (error) {
         console.error("Legacy data migration could not be checked:", error);
+        if (!navigator.onLine) {
+            const offlineData = copyDefaultData();
+            await writeLocalUserData(uid, offlineData);
+            loadNotice = "No local copy was found while offline. You can work locally, but import your latest export to restore existing data.";
+            return offlineData;
+        }
         throw new Error("Could not load local data or check your previous saved data. Connect to the internet and retry.");
     }
 
