@@ -359,13 +359,10 @@ async function loadUserData(user) {
         }
     } catch (error) {
         console.error("Legacy data migration could not be checked:", error);
-        if (!navigator.onLine) {
-            const offlineData = copyDefaultData();
-            await writeLocalUserData(uid, offlineData);
-            loadNotice = "No local copy was found while offline. You can work locally, but import your latest export to restore existing data.";
-            return offlineData;
-        }
-        throw new Error("Could not load local data or check your previous saved data. Connect to the internet and retry.");
+        const initialData = copyDefaultData();
+        await writeLocalUserData(uid, initialData);
+        loadNotice = "A new local workspace was created, but the old cloud backup could not be checked. If you had previous data, restore it from an export or retry migration before making new changes.";
+        return initialData;
     }
 
     const initialData = copyDefaultData();
