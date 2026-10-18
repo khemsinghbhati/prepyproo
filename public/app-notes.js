@@ -498,9 +498,8 @@
         },
 
         updateNoteText() {
-            const page = this.getCurrentNotePage();
             const text = document.getElementById("notes-text-layer");
-            if (page && text) page.text = text.value;
+            if (text && this.noteDraft) this.noteDraft.text = text.value;
         },
 
         updateNoteInkColor(color) {
