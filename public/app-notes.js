@@ -628,6 +628,52 @@
             this.refreshNoteTextBoxes();
         },
 
+        updateNoteInkColor(color) {
+            if (!validColor(color) || !this.noteDraft) return;
+            this.noteDraft.inkColor = color;
+            const box = this.noteDraft.textBoxes.find(item => item.id === this.noteDraft.selectedTextBoxId);
+            if (box) {
+                box.color = color;
+                const element = document.querySelector('[data-text-box-id="' + box.id + '"]');
+                if (element) element.style.color = color;
+            }
+        },
+
+        startMoveNoteTextBox(event, boxId) {
+            if (!this.noteDraft || this.noteDraft.mode !== "text") return;
+            event.preventDefault();
+            event.stopPropagation();
+            const box = this.noteDraft.textBoxes.find(item => item.id === boxId);
+            const stage = document.getElementById("notes-page-stage");
+            const element = document.querySelector('[data-text-box-id="' + boxId + '"]');
+            if (!box || !stage || !element) return;
+            this.selectNoteTextBox(boxId);
+            const rect = stage.getBoundingClientRect();
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const originalX = Number(box.x) || 0;
+            const originalY = Number(box.y) || 0;
+            const move = moveEvent => {
+                const dx = (moveEvent.clientX - startX) / rect.width * 100;
+                const dy = (moveEvent.clientY - startY) / rect.height * 100;
+                box.x = Math.max(0, Math.min(100 - box.width, originalX + dx));
+                box.y = Math.max(0, Math.min(100 - box.height, originalY + dy));
+                element.style.left = box.x + "%";
+                element.style.top = box.y + "%";
+            };
+            const stop = () => {
+                document.removeEventListener("pointermove", move);
+                document.removeEventListener("pointerup", stop);
+                document.removeEventListener("pointercancel", stop);
+                this.noteTextMoveCleanup = null;
+            };
+            if (this.noteTextMoveCleanup) this.noteTextMoveCleanup();
+            this.noteTextMoveCleanup = stop;
+            document.addEventListener("pointermove", move);
+            document.addEventListener("pointerup", stop);
+            document.addEventListener("pointercancel", stop);
+        },
+
         setNoteBrushSize(value) {
             if (this.noteDraft) this.noteDraft.brushSize = Math.min(28, Math.max(2, Number(value) || 5));
         },
