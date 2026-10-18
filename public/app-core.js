@@ -97,15 +97,45 @@ Object.assign(window.app, {
                             const pageHeight = Number(page.height);
                             const background = normalizeNotesBackground(page.background);
                             const imageUrl = String(page.imageUrl ?? '');
+                            const legacyText = String(page.text ?? '');
+                            const fallbackTextColor = /^#[0-9a-f]{6}$/i.test(String(page.textColor || ''))
+                                ? String(page.textColor).toLowerCase()
+                                : '#ffffff';
+                            const sourceTextBoxes = Array.isArray(page.textBoxes) ? page.textBoxes :
+                                (legacyText.trim() ? [{
+                                    id: generateId(), x: 4, y: 4, width: 92, height: 30,
+                                    text: legacyText, color: fallbackTextColor, fontScale: 2.5
+                                }] : []);
+                            const textBoxes = sourceTextBoxes
+                                .filter(box => box && typeof box === 'object')
+                                .slice(0, 500)
+                                .map(box => {
+                                    const numeric = (value, fallback, min, max) => {
+                                        const number = Number(value);
+                                        return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+                                    };
+                                    const color = /^#[0-9a-f]{6}$/i.test(String(box.color || ''))
+                                        ? String(box.color).toLowerCase()
+                                        : fallbackTextColor;
+                                    return {
+                                        id: this.normalizeID(box.id),
+                                        x: numeric(box.x, 4, 0, 95),
+                                        y: numeric(box.y, 4, 0, 95),
+                                        width: numeric(box.width, 42, 5, 100),
+                                        height: numeric(box.height, 12, 3, 100),
+                                        text: String(box.text ?? ''),
+                                        color,
+                                        fontScale: numeric(box.fontScale, 2.5, 1, 8)
+                                    };
+                                });
                             return {
                                 ...page,
                                 id: this.normalizeID(page.id),
                                 title: String(page.title ?? `Page ${pageIndex + 1}`),
                                 type: page.type === 'image' ? 'image' : 'canvas',
-                                text: String(page.text ?? ''),
-                                textColor: /^#[0-9a-f]{6}$/i.test(String(page.textColor || ''))
-                                    ? String(page.textColor).toLowerCase()
-                                    : '#ffffff',
+                                text: '',
+                                textBoxes,
+                                textColor: fallbackTextColor,
                                 imageUrl,
                                 imagePageUrl: String(page.imagePageUrl ?? (page.type === 'image' ? imageUrl : '')),
                                 foregroundUrl: String(page.foregroundUrl ?? ''),
@@ -161,8 +191,10 @@ Object.assign(window.app, {
         }
         try {
             await window.saveUserData(data);
+            return true;
         } catch (error) {
             console.error("PrepPro save failed:", error);
+            return false;
         }
     },
 
