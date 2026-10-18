@@ -334,7 +334,7 @@ async function writeCloudUserSnapshot(uid, userData) {
 
     let previousManifest = null;
     try {
-        const previousSnapshot = await getDoc(rootRef);
+        const previousSnapshot = await getCurrentCloudManifest(uid);
         if (previousSnapshot.exists()) previousManifest = previousSnapshot.data();
     } catch (error) {
         throw new Error("Could not read the current cloud manifest before syncing: " + (error.message || "network error"));
