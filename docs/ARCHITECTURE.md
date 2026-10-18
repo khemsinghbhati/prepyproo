@@ -1,6 +1,6 @@
 # PrepPro code architecture
 
-PrepPro is a static vanilla-JavaScript app hosted from `public/`. The split preserves the existing DOM, global `window.app` API, HTML inline handlers, and deployment setup. Firebase Authentication provides sign-in; ongoing app data is stored locally in IndexedDB. Cross-device transfer can use a direct peer-to-peer browser data channel with a manually exchanged offer/answer code; JSON export/import is the fallback. There is no automatic cloud sync or cloud copy of active user data.
+PrepPro is a static vanilla-JavaScript app hosted from `public/`. The split preserves the existing DOM, global `window.app` API, inline HTML event handlers, and deployment setup. Firebase Authentication provides sign-in. IndexedDB keeps a local copy for fast saves and offline use, while Firestore automatically syncs the latest user-data snapshot across devices signed in with the same account. JSON export/import remains available for backup and recovery.
 
 ## Module ownership
 
@@ -16,7 +16,7 @@ PrepPro is a static vanilla-JavaScript app hosted from `public/`. The split pres
 | `public/app-study-session.js` | Flashcard viewer, quiz player, answer evaluation, scoring, and per-question timing | Learner/study experience |
 | `public/app-analytics.js` | Statistics, charts, attempt history, analytics expansion, and detailed attempt review | Analytics and reporting |
 | `public/app-events.js` | Document-level event listeners, currently image-paste handling | Global browser event wiring |
-| `public/firebase-auth.js` | Firebase Authentication, IndexedDB persistence, peer-to-peer device transfer, JSON import/export, and one-time legacy-data migration | Authentication and local persistence; coordinate if changing data shape |
+| `public/firebase-auth.js` | Firebase Authentication, IndexedDB persistence, automatic Firestore sync, and JSON import/export | Authentication and persistence; coordinate if changing data shape |
 | `public/styles/base.css` | Theme variables, global reset, typography, form controls, and focus styles | App-wide foundational styling; coordinate before changing tokens |
 | `public/styles/flashcards.css` | 3D flashcard flip transforms | Flashcard visual behavior |
 | `public/styles/scrollbars.css` | Scrollbar themes and hide-scrollbar utility | Scrollbar and overflow visuals |
@@ -30,9 +30,9 @@ PrepPro is a static vanilla-JavaScript app hosted from `public/`. The split pres
 
 1. Load scripts in the order listed in `public/index.html`: `app-state.js`, core, feature modules, events, and finally the Firebase module. Feature files extend the existing `window.app` object with `Object.assign`; they must not replace it.
 2. The app uses classic scripts for UI modules. Shared top-level bindings in `app-state.js` are available to those scripts. Do not add another top-level `let`/`const` with an existing name in another classic script.
-3. Keep authentication and local persistence in `firebase-auth.js`. UI features should use `window.saveUserData` through `app.save()`; they must not write directly to IndexedDB or Firestore. Firestore access is limited to the transition path for migrating old user documents and marking them as migrated; new app saves go to IndexedDB.
+3. Keep authentication and persistence in `firebase-auth.js`. UI features should use `window.saveUserData` through `app.save()`; they must not write directly to IndexedDB or Firestore. Saves go to IndexedDB first, then a debounced Firestore write synchronizes the latest user snapshot to other signed-in devices.
 4. Keep each feature's behavior in its matching module. When a change genuinely needs shared state, discuss it first and make the smallest required update to `app-state.js`.
-5. Preserve existing data fields and normalization unless the task explicitly includes a migration. Avoid renaming IDs, storage keys, global handlers, or DOM IDs as part of unrelated refactors. Browser storage is per device. To transfer directly, exchange the temporary peer-to-peer offer and answer codes while both authenticated devices are online, then confirm replacement on the destination. Export/import JSON remains the fallback.
+5. Preserve existing data fields and normalization unless the task explicitly includes a migration. Avoid renaming IDs, storage keys, global handlers, or DOM IDs as part of unrelated refactors. IndexedDB is the per-device offline cache; Firestore syncs snapshots across the same authenticated account. Export/import JSON remains available as a manual backup or recovery path.
 6. CSS is split into files under `public/styles/` and linked in `index.html` in cascade order. Keep each change in the closest matching stylesheet; avoid moving rules between files unless you verify that the visual cascade is unchanged. Avoid editing `index.html` for feature-only work. It should normally change only when adding/removing a script or stylesheet, changing the app shell, or adjusting shared markup.
 7. Do not put credentials or private keys in the frontend. Firebase web configuration in the client is public configuration; privileged credentials belong in GitHub/Firebase secrets.
 
@@ -43,9 +43,11 @@ PrepPro is a static vanilla-JavaScript app hosted from `public/`. The split pres
 - Before opening a pull request, run the app locally with the Firebase emulators using the commands in [How to test Locally.md](../How%20to%20test%20Locally.md). Verify both Creator and Learner flows related to the change.
 - Open a pull request instead of committing directly to `main). Check the Firebase Hosting preview and manually test the changed feature before merging. A preview deploy is not the production deployment; the workflow that deploys live is triggered by a push to `main`.
 
-## Local-first data storage and device transfer
+## Local-first storage and automatic cloud sync
 
-`public/firebase-auth.js` uses IndexedDB as the source of truth for ordinary saves and requests persistent browser storage where supported. IndexedDB can still be cleared by the user, removed by browser policy, or become unavailable, so users should export backups periodically. The JSON export includes the Firebase Auth UID; imports are rejected if the signed-in account does not match. Export/import replaces local app data on the destination device. Direct transfer uses WebRTC with a temporary STUN-assisted connection and an explicit offer/answer code exchange; the data payload travels peer-to-peer and is not saved to a cloud database. Some networks block direct peer-to-peer connections, in which case export/import is the fallback. This is a user-initiated transfer, not continuous/background sync.
+`public/firebase-auth.js` writes to IndexedDB first, then debounces the user-data snapshot to Firestore. An account-scoped listener watches for updates from other devices. Remote changes are applied automatically when the app is in a safe view; if a quiz or editor is active, the update is held until the app can refresh without interrupting that work. Offline saves remain local and sync when connectivity returns. The current sync status is shown in the app's save-status area.
+
+IndexedDB can still be cleared by the user, removed by browser policy, or become unavailable, so users should export backups periodically. JSON imports are accepted only when the signed-in Firebase Auth UID matches the export and replace the current local workspace. Local development uses the Auth and Firestore emulators with the `demo-prepyproo` project ID. Deployed previews use the configured Firebase project, so test-data changes made on a preview can affect that project's account data even though the website code is not deployed to `main`.
 
 ## Why not ES modules yet?
 
