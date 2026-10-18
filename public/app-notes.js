@@ -80,16 +80,25 @@
         context.drawImage(image, (width - dw) / 2, (height - dh) / 2, dw, dh);
     }
 
-    function drawWrappedText(context, text, color, width, height) {
-        const fontSize = Math.max(18, Math.round(width * 0.028));
-        const margin = Math.round(width * 0.04);
-        const lineHeight = Math.round(fontSize * 1.45);
+    function drawWrappedText(context, text, color, pageWidth, pageHeight, box) {
+        const x = Math.round(pageWidth * Math.max(0, Number(box.x) || 0) / 100);
+        const yStart = Math.round(pageHeight * Math.max(0, Number(box.y) || 0) / 100);
+        const boxWidth = Math.max(1, Math.round(pageWidth * Math.min(100, Number(box.width) || 42) / 100));
+        const boxHeight = Math.max(1, Math.round(pageHeight * Math.min(100, Number(box.height) || 12) / 100));
+        const fontSize = Math.max(14, Math.round(pageWidth * Math.min(8, Math.max(1, Number(box.fontScale) || 2.5)) / 100));
+        const margin = Math.max(2, Math.round(fontSize * 0.15));
+        const lineHeight = Math.round(fontSize * 1.35);
+        const right = Math.min(pageWidth, x + boxWidth) - margin;
+        const bottom = Math.min(pageHeight, yStart + boxHeight) - margin;
         context.save();
-        context.fillStyle = color;
+        context.beginPath();
+        context.rect(x, yStart, boxWidth, boxHeight);
+        context.clip();
+        context.fillStyle = validColor(color) ? color : "#ffffff";
         context.font = "500 " + fontSize + "px Inter, Arial, sans-serif";
         context.textBaseline = "top";
         context.textAlign = "left";
-        let y = margin;
+        let y = yStart + margin;
         String(text || "").split(/\r?\n/).forEach(function (paragraph) {
             if (!paragraph) {
                 y += lineHeight;
@@ -98,16 +107,16 @@
             let line = "";
             paragraph.split(/\s+/).forEach(function (word) {
                 const candidate = line ? line + " " + word : word;
-                if (line && context.measureText(candidate).width > width - margin * 2) {
-                    context.fillText(line, margin, y, width - margin * 2);
+                if (line && context.measureText(candidate).width > right - x - margin) {
+                    if (y + lineHeight <= bottom) context.fillText(line, x + margin, y, right - x - margin);
                     y += lineHeight;
                     line = word;
                 } else {
                     line = candidate;
                 }
             });
-            if (line && y < height) {
-                context.fillText(line, margin, y, width - margin * 2);
+            if (line && y + lineHeight <= bottom) {
+                context.fillText(line, x + margin, y, right - x - margin);
                 y += lineHeight;
             }
         });
