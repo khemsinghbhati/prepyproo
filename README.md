@@ -41,7 +41,7 @@ PrepPro is a serverless, single-page learning app that helps students organize s
 ### Cloud and account integration
 
 - **Authentication:** Firebase Authentication with Google sign-in, as configured for the deployed app.
-- **Automatic cross-device sync:** Study content, attempt history, and Notes metadata are saved locally in IndexedDB and synced through Firestore when online. Large snapshots are transferred in windows of small chunks; Firestore's user document stores only a compact manifest, keeping the snapshot below the per-document size limit. Sign in with the same account on each device; no transfer codes are needed.
+- **Automatic cross-device sync:** Study content, attempt history, and Notes metadata are saved locally in IndexedDB and synced through Firestore when online. Large snapshots are transferred in windows of small chunks; a compact manifest is stored at `users/{uid}/syncState/current` and payload chunks are separate documents. The legacy `users/{uid}` document is left untouched for compatibility. Sign in with the same account on each device; no transfer codes are needed.
 - **Offline use:** Local saves continue in IndexedDB without an internet connection and sync when connectivity returns.
 - **Backups:** Export/Import data remains available for a manual JSON backup or recovery; importing replaces the current local workspace.
 - **Hosting:** The live app is hosted on Firebase Hosting.
