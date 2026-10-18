@@ -753,7 +753,6 @@ window.importPrepProData = async function (event) {
     const file = input?.files?.[0];
     if (input) input.value = "";
     if (!file || !currentUser) return;
-    if (file.size > 100 * 1024 * 1024) return showToast("This import file is too large (100 MB max).", "error");
     try {
         const envelope = JSON.parse(await file.text());
         if (envelope.app !== "PrepPro" || envelope.formatVersion !== 1 || !isValidData(envelope.data)) {
