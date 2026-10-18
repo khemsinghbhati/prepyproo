@@ -86,7 +86,7 @@ PrepPro is a serverless, single-page learning app that helps students organize s
 
 ## 🧱 Code Structure
 
-The frontend is separated into feature-focused JavaScript files so collaborators can work in parallel. See [the architecture and collaboration guide](docs/ARCHITECTURE.md) for module ownership, dependency rules, and the recommended pull-request workflow.
+The frontend is separated into feature-focused JavaScript files and responsibility-focused CSS files so collaborators can work in parallel. CSS modules live under `public/styles/`. See [the architecture and collaboration guide](docs/ARCHITECTURE.md) for module ownership, dependency rules, and the recommended pull-request workflow.
 
 ## 🧪 Local Testing with Firebase Emulators
 

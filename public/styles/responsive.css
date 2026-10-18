@@ -1,0 +1,44 @@
+/* =========================================================
+   Responsive Layout Improvements
+   ========================================================= */
+
+@media (max-width: 639px) {
+    #view-container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    #toast {
+        left: 1rem;
+        right: 1rem;
+        bottom: 1rem;
+        width: auto;
+        justify-content: flex-start;
+    }
+
+    #modal-container {
+        padding: 0.75rem;
+    }
+
+    #modal-content {
+        border-radius: 1.5rem;
+        max-height: 92vh;
+        max-height: 92dvh;
+        overflow-y: auto;
+    }
+}
+
+/* =========================================================
+   Reduced Motion Accessibility
+   ========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

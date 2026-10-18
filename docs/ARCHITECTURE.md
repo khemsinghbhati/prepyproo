@@ -17,7 +17,13 @@ PrepPro is a static vanilla-JavaScript app hosted from `public/`. The split is i
 | `public/app-analytics.js` | Statistics, charts, attempt history, analytics expansion, and detailed attempt review | Analytics and reporting |
 | `public/app-events.js` | Document-level event listeners, currently image-paste handling | Global browser event wiring |
 | `public/firebase-auth.js` | Firebase initialization, authentication, local cache, pending saves, and Firestore synchronization | Authentication and persistence; coordinate if changing the data contract |
-| `public/style.css` | Custom styles | Styling-only changes |
+| `public/styles/base.css` | Theme variables, global reset, typography, form controls, and focus styles | App-wide foundational styling; coordinate before changing tokens |
+| `public/styles/flashcards.css` | 3D flashcard flip transforms | Flashcard visual behavior |
+| `public/styles/scrollbars.css` | Scrollbar themes and hide-scrollbar utility | Scrollbar and overflow visuals |
+| `public/styles/learning-path.css` | Learning-path connector line and its breakpoint adjustment | Learning-path styling |
+| `public/styles/animations.css` | Shared pop, fade, and slide animations | Motion/transition styling |
+| `public/styles/overlays.css` | Modal backdrop/content and toast notification sizing | Modals and notifications |
+| `public/styles/responsive.css` | Small-screen overrides and reduced-motion accessibility | Responsive and motion accessibility tweaks |
 | `firebase.json` | Firebase Hosting and local emulator ports | Hosting/emulator configuration |
 
 ## Dependency and change rules
@@ -27,13 +33,13 @@ PrepPro is a static vanilla-JavaScript app hosted from `public/`. The split is i
 3. Keep authentication and cloud persistence in `firebase-auth.js`. UI features should use the existing `window.saveUserData` integration through `app.save()` and must not write directly to Firestore.
 4. Keep each feature's behavior in its matching module. When a change genuinely needs shared state, discuss it first and make the smallest required update to `app-state.js`.
 5. Preserve existing data fields and normalization unless the task explicitly includes a migration. Avoid renaming IDs, storage keys, global handlers, or DOM IDs as part of unrelated refactors.
-6. Avoid editing `index.html` for feature-only work. It should normally change only when adding/removing a script, changing the app shell, or adjusting shared markup.
+6. CSS is split into files under `public/styles/` and linked in `index.html` in cascade order. Keep each change in the closest matching stylesheet; avoid moving rules between files unless you verify that the visual cascade is unchanged. Avoid editing `index.html` for feature-only work. It should normally change only when adding/removing a script or stylesheet, changing the app shell, or adjusting shared markup.
 7. Do not put credentials or private keys in the frontend. Firebase web configuration in the client is public configuration; privileged credentials belong in GitHub/Firebase secrets.
 
 ## Parallel collaboration workflow
 
 - Assign one person per feature module, with a clear acceptance criterion and a separate branch. Examples: flashcards → `app-flashcards.js`; quiz authoring → `app-questions.js`; learner quiz flow → `app-study-session.js`; analytics → `app-analytics.js`.
-- Keep pull requests narrow and avoid having multiple collaborators edit `app-state.js`, `index.html`, or `firebase-auth.js) at the same time.
+- Keep pull requests narrow and avoid having multiple collaborators edit `app-state.js`, `index.html`, or `firebase-auth.js) at the same time. For visual tasks, assign one stylesheet owner (for example, `styles/flashcards.css` or `styles/learning-path.css`) and coordinate changes to `styles/base.css`.
 - Before opening a pull request, run the app locally with the Firebase emulators using the commands in [How to test Locally.md](../How%20to%20test%20Locally.md). Verify both Creator and Learner flows related to the change.
 - Open a pull request instead of committing directly to `main). Check the Firebase Hosting preview and manually test the changed feature before merging. A preview deploy is not the production deployment; the workflow that deploys live is triggered by a push to `main`.
 
