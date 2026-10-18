@@ -6,7 +6,8 @@ import {
     connectAuthEmulator
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import {
-    getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, serverTimestamp
+    getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, serverTimestamp,
+    collection, getDocs, deleteDoc, query, orderBy, startAfter, limit
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -48,7 +49,17 @@ let remoteApplyInProgress = false;
 
 const CLOUD_UPDATED_AT_FIELD = "_prepProCloudUpdatedAt";
 const CLOUD_SCHEMA_FIELD = "_prepProCloudSyncSchema";
+const CLOUD_SNAPSHOT_ID_FIELD = "_prepProCloudSnapshotId";
+const CLOUD_CHUNK_COUNT_FIELD = "_prepProCloudChunkCount";
+const CLOUD_TOTAL_BYTES_FIELD = "_prepProCloudTotalBytes";
+const CLOUD_SHA256_FIELD = "_prepProCloudSha256";
+const CLOUD_SNAPSHOT_HISTORY_FIELD = "_prepProCloudSnapshotHistory";
 const CLOUD_SYNC_DEBOUNCE_MS = 750;
+const CLOUD_CHUNK_RAW_BYTES = 300 * 1024;
+const CLOUD_TRANSFER_WINDOW_SIZE = 4;
+const CLOUD_MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024;
+const CLOUD_CHUNK_COLLECTION = "chunks";
+const CLOUD_SNAPSHOT_COLLECTION = "syncSnapshots";
 const DEFAULT_DATA = { subjects: [], xp: 0 };
 const LOCAL_DB_NAME = "preppro-local-data";
 const LOCAL_DB_VERSION = 1;
@@ -95,6 +106,11 @@ function extractCloudUserData(value) {
     const clean = structuredClone(value);
     delete clean[CLOUD_UPDATED_AT_FIELD];
     delete clean[CLOUD_SCHEMA_FIELD];
+    delete clean[CLOUD_SNAPSHOT_ID_FIELD];
+    delete clean[CLOUD_CHUNK_COUNT_FIELD];
+    delete clean[CLOUD_TOTAL_BYTES_FIELD];
+    delete clean[CLOUD_SHA256_FIELD];
+    delete clean[CLOUD_SNAPSHOT_HISTORY_FIELD];
     delete clean[LEGACY_MIGRATION_MARKER];
     return clean;
 }
@@ -122,6 +138,227 @@ function sameUserData(first, second) {
         return JSON.stringify(left) === JSON.stringify(right);
     } catch {
         return false;
+    }
+}
+
+
+function isChunkedCloudManifest(value) {
+    return Number(value?.[CLOUD_SCHEMA_FIELD]) >= 2 &&
+        typeof value?.[CLOUD_SNAPSHOT_ID_FIELD] === "string" &&
+        Number.isInteger(value?.[CLOUD_CHUNK_COUNT_FIELD]) &&
+        Number.isInteger(value?.[CLOUD_TOTAL_BYTES_FIELD]) &&
+        typeof value?.[CLOUD_SHA256_FIELD] === "string";
+}
+
+function bytesToBase64(bytes) {
+    let binary = "";
+    const blockSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += blockSize) {
+        binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + blockSize, bytes.length)));
+    }
+    return btoa(binary);
+}
+
+function base64ToBytes(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+}
+
+async function sha256Hex(bytes) {
+    if (!crypto?.subtle?.digest) {
+        throw new Error("This browser cannot verify cloud snapshots. Open PrepPro in a current browser over HTTPS.");
+    }
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function cloudSnapshotParent(uid, snapshotId) {
+    return doc(legacyDb, "users", uid, CLOUD_SNAPSHOT_COLLECTION, snapshotId);
+}
+
+function cloudSnapshotChunk(uid, snapshotId, index) {
+    const chunkId = String(index).padStart(8, "0");
+    return doc(legacyDb, "users", uid, CLOUD_SNAPSHOT_COLLECTION, snapshotId, CLOUD_CHUNK_COLLECTION, chunkId);
+}
+
+async function readCloudUserData(uid, cloudDocument) {
+    if (!cloudDocument || typeof cloudDocument !== "object") return null;
+    if (!isChunkedCloudManifest(cloudDocument)) {
+        return extractCloudUserData(cloudDocument);
+    }
+
+    const snapshotId = cloudDocument[CLOUD_SNAPSHOT_ID_FIELD];
+    const chunkCount = cloudDocument[CLOUD_CHUNK_COUNT_FIELD];
+    const totalBytes = cloudDocument[CLOUD_TOTAL_BYTES_FIELD];
+    const expectedHash = cloudDocument[CLOUD_SHA256_FIELD];
+
+    if (!/^[A-Za-z0-9_-]{8,100}$/.test(snapshotId) ||
+        chunkCount < 1 ||
+        chunkCount > Math.ceil(CLOUD_MAX_SNAPSHOT_BYTES / CLOUD_CHUNK_RAW_BYTES) ||
+        totalBytes < 1 || totalBytes > CLOUD_MAX_SNAPSHOT_BYTES) {
+        throw new Error("The cloud snapshot manifest is invalid or exceeds the supported transfer size.");
+    }
+
+    const chunkBytes = new Array(chunkCount);
+    for (let windowStart = 0; windowStart < chunkCount; windowStart += CLOUD_TRANSFER_WINDOW_SIZE) {
+        const windowEnd = Math.min(windowStart + CLOUD_TRANSFER_WINDOW_SIZE, chunkCount);
+        const windowResults = await Promise.all(
+            Array.from({ length: windowEnd - windowStart }, (_, offset) => windowStart + offset)
+                .map(async index => {
+                    const snapshot = await getDoc(cloudSnapshotChunk(uid, snapshotId, index));
+                    if (!snapshot.exists()) {
+                        throw new Error("A cloud data chunk is missing. The complete snapshot was not applied; retry sync.");
+                    }
+                    const record = snapshot.data();
+                    if (record.snapshotId !== snapshotId || record.index !== index ||
+                        typeof record.payload !== "string" || record.payload.length > 420 * 1024) {
+                        throw new Error("A cloud data chunk failed validation.");
+                    }
+                    const bytes = base64ToBytes(record.payload);
+                    if (bytes.length > CLOUD_CHUNK_RAW_BYTES ||
+                        (index < chunkCount - 1 && bytes.length !== CLOUD_CHUNK_RAW_BYTES)) {
+                        throw new Error("A cloud data chunk has an invalid size.");
+                    }
+                    return { index, bytes };
+                })
+        );
+        windowResults.forEach(result => { chunkBytes[result.index] = result.bytes; });
+    }
+
+    const assembled = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const bytes of chunkBytes) {
+        if (!bytes || offset + bytes.length > totalBytes) {
+            throw new Error("The cloud snapshot length does not match its manifest.");
+        }
+        assembled.set(bytes, offset);
+        offset += bytes.length;
+    }
+    if (offset !== totalBytes) {
+        throw new Error("The cloud snapshot is incomplete. The local copy was kept.");
+    }
+    const actualHash = await sha256Hex(assembled);
+    if (actualHash !== expectedHash) {
+        throw new Error("The cloud snapshot failed its integrity check. The local copy was kept.");
+    }
+
+    let parsed;
+    try {
+        parsed = JSON.parse(new TextDecoder().decode(assembled));
+    } catch {
+        throw new Error("The cloud snapshot is not valid JSON. The local copy was kept.");
+    }
+    const clean = extractCloudUserData(parsed);
+    if (!isValidData(clean)) throw new Error("The cloud snapshot does not contain valid PrepPro data.");
+    return clean;
+}
+
+async function cleanupCloudSnapshot(uid, snapshotId) {
+    if (!snapshotId || !currentUser || currentUser.uid !== uid) return;
+    try {
+        const chunksRef = collection(legacyDb, "users", uid, CLOUD_SNAPSHOT_COLLECTION, snapshotId, CLOUD_CHUNK_COLLECTION);
+        let cursor = null;
+        while (true) {
+            const pageQuery = cursor
+                ? query(chunksRef, orderBy("index"), startAfter(cursor), limit(40))
+                : query(chunksRef, orderBy("index"), limit(40));
+            const page = await getDocs(pageQuery);
+            if (page.empty) break;
+            await Promise.all(page.docs.map(chunk => deleteDoc(chunk.ref)));
+            cursor = page.docs[page.docs.length - 1];
+            if (page.docs.length < 40) break;
+        }
+        await deleteDoc(cloudSnapshotParent(uid, snapshotId));
+    } catch (error) {
+        console.warn("Could not remove an old PrepPro cloud snapshot:", snapshotId, error);
+    }
+}
+
+async function writeCloudUserSnapshot(uid, userData) {
+    const serialized = JSON.stringify(extractCloudUserData(userData));
+    const bytes = new TextEncoder().encode(serialized);
+    if (bytes.byteLength < 1 || bytes.byteLength > CLOUD_MAX_SNAPSHOT_BYTES) {
+        throw new Error("This PrepPro snapshot is larger than the 100 MiB cloud-sync limit. Your local copy is safe; use Export data for a backup.");
+    }
+
+    const snapshotId = "s_" + (crypto.randomUUID
+        ? crypto.randomUUID().replace(/-/g, "")
+        : Date.now().toString(36) + Math.random().toString(36).slice(2));
+    const chunkCount = Math.ceil(bytes.byteLength / CLOUD_CHUNK_RAW_BYTES);
+    const sha256 = await sha256Hex(bytes);
+    const rootRef = legacyUserDocument(uid);
+    const parentRef = cloudSnapshotParent(uid, snapshotId);
+
+    let previousRoot = null;
+    try {
+        const previousSnapshot = await getDoc(rootRef);
+        if (previousSnapshot.exists()) previousRoot = previousSnapshot.data();
+    } catch (error) {
+        throw new Error("Could not read the current cloud manifest before syncing: " + (error.message || "network error"));
+    }
+
+    const previousIds = Array.isArray(previousRoot?.[CLOUD_SNAPSHOT_HISTORY_FIELD])
+        ? previousRoot[CLOUD_SNAPSHOT_HISTORY_FIELD].filter(id => typeof id === "string")
+        : [];
+    const previousCurrentId = isChunkedCloudManifest(previousRoot)
+        ? previousRoot[CLOUD_SNAPSHOT_ID_FIELD]
+        : null;
+    const oldHistory = [...new Set([previousCurrentId, ...previousIds].filter(id => id && id !== snapshotId))];
+    const nextHistory = [snapshotId, ...oldHistory].slice(0, 3);
+    const obsoleteSnapshots = oldHistory.filter(id => !nextHistory.includes(id));
+
+    await setDoc(parentRef, {
+        snapshotId, chunkCount, totalBytes: bytes.byteLength, sha256,
+        status: "uploading", createdAt: serverTimestamp()
+    });
+
+    try {
+        for (let windowStart = 0; windowStart < chunkCount; windowStart += CLOUD_TRANSFER_WINDOW_SIZE) {
+            const windowEnd = Math.min(windowStart + CLOUD_TRANSFER_WINDOW_SIZE, chunkCount);
+            await Promise.all(
+                Array.from({ length: windowEnd - windowStart }, (_, offset) => windowStart + offset)
+                    .map(async index => {
+                        const start = index * CLOUD_CHUNK_RAW_BYTES;
+                        const chunk = bytes.subarray(start, Math.min(start + CLOUD_CHUNK_RAW_BYTES, bytes.byteLength));
+                        await setDoc(cloudSnapshotChunk(uid, snapshotId, index), {
+                            snapshotId,
+                            index,
+                            payload: bytesToBase64(chunk)
+                        });
+                    })
+            );
+            if (currentUser?.uid !== uid) throw new Error("Account changed during cloud sync.");
+        }
+
+        await setDoc(parentRef, {
+            snapshotId, chunkCount, totalBytes: bytes.byteLength, sha256,
+            status: "ready", createdAt: serverTimestamp()
+        });
+
+        // Switch the active snapshot only after every chunk is uploaded and marked ready.
+        await setDoc(rootRef, {
+            [CLOUD_SCHEMA_FIELD]: 2,
+            [CLOUD_SNAPSHOT_ID_FIELD]: snapshotId,
+            [CLOUD_CHUNK_COUNT_FIELD]: chunkCount,
+            [CLOUD_TOTAL_BYTES_FIELD]: bytes.byteLength,
+            [CLOUD_SHA256_FIELD]: sha256,
+            [CLOUD_SNAPSHOT_HISTORY_FIELD]: nextHistory,
+            [CLOUD_UPDATED_AT_FIELD]: serverTimestamp(),
+            [LEGACY_MIGRATION_MARKER]: previousRoot?.[LEGACY_MIGRATION_MARKER] || new Date().toISOString()
+        });
+
+        // Retain the latest three generations so readers already downloading an older
+        // snapshot are unlikely to lose their chunks during a newer upload.
+        for (const obsoleteId of obsoleteSnapshots) {
+            cleanupCloudSnapshot(uid, obsoleteId);
+        }
+    } catch (error) {
+        cleanupCloudSnapshot(uid, snapshotId);
+        throw error;
     }
 }
 
@@ -295,10 +532,7 @@ async function flushCloudSync() {
     cloudWriteInProgress = true;
     let failed = false;
     try {
-        const payload = extractCloudUserData(item.data);
-        payload[CLOUD_UPDATED_AT_FIELD] = serverTimestamp();
-        payload[CLOUD_SCHEMA_FIELD] = 1;
-        await setDoc(legacyUserDocument(item.uid), payload);
+        await writeCloudUserSnapshot(item.uid, item.data);
         if (currentUser?.uid === item.uid && !queuedCloudWrite &&
             latestLocalSaveAt <= item.localUpdatedAt) {
             setSaveStatus("Saved & synced across devices");
@@ -388,7 +622,14 @@ function startCloudSync(uid) {
 
         const rawCloudData = snapshot.data();
         const remoteUpdatedAt = cloudUpdatedAtMillis(rawCloudData);
-        const remoteData = extractCloudUserData(rawCloudData);
+        let remoteData;
+        try {
+            remoteData = await readCloudUserData(uid, rawCloudData);
+        } catch (error) {
+            console.error("Could not download the complete cloud snapshot:", error);
+            setSaveStatus("Saved locally · cloud snapshot download failed; retrying on next update");
+            return;
+        }
         if (!isValidData(remoteData)) {
             cloudBaselineKnown = true;
             lastAppliedCloudAt = remoteUpdatedAt;
@@ -561,7 +802,16 @@ async function loadUserData(user) {
     const cloudExists = !!cloudSnapshot?.exists?.();
     const rawCloudData = cloudExists ? cloudSnapshot.data() : null;
     const remoteUpdatedAt = cloudUpdatedAtMillis(rawCloudData);
-    let remoteData = rawCloudData ? extractCloudUserData(rawCloudData) : null;
+    let remoteData = null;
+    if (rawCloudData && !cloudReadFailed && !cloudIsCached) {
+        try {
+            remoteData = await readCloudUserData(uid, rawCloudData);
+        } catch (error) {
+            cloudReadFailed = true;
+            console.error("Could not download the complete cloud snapshot:", error);
+            loadNotice = "The cloud snapshot could not be downloaded completely. Your local data will be kept; sync needs attention.";
+        }
+    }
     if (remoteData && !isValidData(remoteData)) remoteData = null;
     if (remoteData && window.app?.normalizeData) {
         remoteData = window.app.normalizeData(structuredClone(remoteData));
