@@ -14,7 +14,7 @@ PrepPro is a serverless, single-page learning app that helps students organize s
 ### Learning path and content management
 
 - **Nested learning structure:** Organize material into subjects, topics, and subtopics.
-- **Collapsible sections:** Expand or collapse subjects and topics in the Learning Path. Subtopic cards can also expand to preview their flashcards and question sets.
+- **Collapsible sections:** Expand or collapse subjects and topics in the Learning Path.
 - **Creator Mode:** Create, rename, reorder, and delete learning content.
 - **Flashcards:** Add front/back text and images to study cards.
 - **Question sets:** Create Multiple Choice (MCQ), Multiple Select (MSQ), and Numerical questions.
