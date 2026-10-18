@@ -215,7 +215,20 @@ function renderUser(user) {
     importButton.textContent = "Import data";
     importButton.addEventListener("click", () => importInput.click());
     actionRow.append(exportButton, importButton);
-    wrapper.append(actionRow, importInput);
+    const transferRow = document.createElement("div");
+    transferRow.className = "grid grid-cols-2 gap-2";
+    const sendButton = document.createElement("button");
+    sendButton.type = "button";
+    sendButton.className = "px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-600/10 hover:bg-blue-600/20 text-xs font-bold text-blue-200";
+    sendButton.textContent = "Send to device";
+    sendButton.addEventListener("click", window.startPrepProDeviceSend);
+    const receiveButton = document.createElement("button");
+    receiveButton.type = "button";
+    receiveButton.className = "px-3 py-2 rounded-lg border border-blue-500/30 bg-blue-600/10 hover:bg-blue-600/20 text-xs font-bold text-blue-200";
+    receiveButton.textContent = "Receive from device";
+    receiveButton.addEventListener("click", window.startPrepProDeviceReceive);
+    transferRow.append(sendButton, receiveButton);
+    wrapper.append(actionRow, transferRow, importInput);
     area.append(wrapper);
 }
 
