@@ -188,6 +188,10 @@ function cloudSnapshotChunk(uid, snapshotId, index) {
 
 async function readCloudUserData(uid, cloudDocument) {
     if (!cloudDocument || typeof cloudDocument !== "object") return null;
+    const cloudSchemaVersion = Number(cloudDocument[CLOUD_SCHEMA_FIELD] || 0);
+    if (cloudSchemaVersion >= 2 && !isChunkedCloudManifest(cloudDocument)) {
+        throw new Error("The cloud snapshot manifest is malformed. The local copy was kept.");
+    }
     if (!isChunkedCloudManifest(cloudDocument)) {
         return extractCloudUserData(cloudDocument);
     }
