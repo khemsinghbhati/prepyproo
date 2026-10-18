@@ -42,6 +42,7 @@ let cloudWriteInProgress = false;
 let queuedCloudWrite = null;
 let pendingCloudRemote = null;
 let lastAppliedCloudAt = 0;
+let receivedInitialCloudSnapshot = false;
 let remoteApplyInProgress = false;
 
 const CLOUD_UPDATED_AT_FIELD = "_prepProCloudUpdatedAt";
@@ -333,7 +334,7 @@ async function tryApplyPendingCloudRemote() {
         ? window.app.normalizeData(structuredClone(data))
         : structuredClone(data);
 
-    if (!sameUserData(localData, pending.data) &&
+    if (!pending.legacyRemote && !sameUserData(localData, pending.data) &&
         latestLocalSaveAt > pending.updatedAt && hasUserContent(localData)) {
         pendingCloudRemote = null;
         scheduleCloudSync(currentUser.uid, localData, 120);
@@ -364,11 +365,14 @@ function startCloudSync(uid) {
     if (cloudUnsubscribe) cloudUnsubscribe();
     cloudUnsubscribe = null;
     lastAppliedCloudAt = 0;
+    receivedInitialCloudSnapshot = false;
     pendingCloudRemote = null;
 
     cloudUnsubscribe = onSnapshot(legacyUserDocument(uid), { includeMetadataChanges: true }, async snapshot => {
         if (!currentUser || currentUser.uid !== uid || snapshot.metadata.fromCache ||
             snapshot.metadata.hasPendingWrites) return;
+        const isInitialAuthoritativeSnapshot = !receivedInitialCloudSnapshot;
+        receivedInitialCloudSnapshot = true;
 
         if (!snapshot.exists()) {
             const localRecord = await readLocalUserData(uid).catch(() => null);
@@ -402,9 +406,13 @@ function startCloudSync(uid) {
         if (queuedCloudWrite || cloudSyncTimer || cloudWriteInProgress) return;
 
         const remoteIsNewer = (hasUserContent(remoteData) && !hasUserContent(localData)) ||
-            (remoteUpdatedAt > (latestLocalSaveAt || 0));
+            (remoteUpdatedAt > (latestLocalSaveAt || 0)) ||
+            (!remoteUpdatedAt && !isInitialAuthoritativeSnapshot);
         if (remoteIsNewer) {
-            pendingCloudRemote = { uid, data: remoteData, updatedAt: remoteUpdatedAt };
+            pendingCloudRemote = {
+                uid, data: remoteData, updatedAt: remoteUpdatedAt,
+                legacyRemote: !remoteUpdatedAt && !isInitialAuthoritativeSnapshot
+            };
             if (canApplyRemoteDataNow()) {
                 await tryApplyPendingCloudRemote();
             } else {
