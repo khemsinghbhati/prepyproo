@@ -828,6 +828,7 @@ async function loadUserData(user) {
 
     let cloudSnapshot = null;
     let cloudReadFailed = false;
+    let cloudReadError = null;
     try {
         // Prefer the new snapshot manifest. If it does not exist yet, read the
         // same account's old root document and migrate its data to the chunked model
@@ -838,6 +839,7 @@ async function loadUserData(user) {
             : await getDoc(legacyUserDocument(uid));
     } catch (error) {
         cloudReadFailed = true;
+        cloudReadError = error;
         console.warn("Cloud data could not be checked; the local copy will remain usable:", error);
     }
 
@@ -851,6 +853,7 @@ async function loadUserData(user) {
             remoteData = await readCloudUserData(uid, rawCloudData);
         } catch (error) {
             cloudReadFailed = true;
+            cloudReadError = error;
             console.error("Could not download the complete cloud snapshot:", error);
             loadNotice = "The cloud snapshot could not be downloaded completely. Your local data will be kept; sync needs attention.";
         }
@@ -915,7 +918,15 @@ async function loadUserData(user) {
     }
 
     if (cloudReadFailed && !localData) {
-        throw new Error("PrepPro could not check or download its saved cloud data. No blank workspace was created. Check the connection and Firestore access, then reload.");
+        if (cloudReadError?.code === "permission-denied" || cloudReadError?.code === "firestore/permission-denied") {
+            throw new Error("Firestore denied access to this account's saved data. The deployed Firestore rules may not yet allow PrepPro's new sync paths (users/{uid}/syncState and users/{uid}/syncSnapshots). Update the existing rules safely, then sign in again. No blank workspace was created.");
+        }
+        if (cloudReadError?.code === "unauthenticated" || cloudReadError?.code === "firestore/unauthenticated") {
+            throw new Error("Firestore did not recognize the active sign-in. Sign out, sign in again, and retry. No blank workspace was created.");
+        }
+        throw new Error("PrepPro could not check or download its saved cloud data" +
+            (cloudReadError?.code ? " (" + cloudReadError.code + ")" : "") +
+            ". Check your internet connection and Firestore access, then reload. No blank workspace was created.");
     }
 
     const initialData = copyDefaultData();
