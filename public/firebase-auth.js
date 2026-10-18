@@ -228,6 +228,7 @@ async function readCloudUserData(uid, cloudDocument) {
                 })
         );
         windowResults.forEach(result => { chunkBytes[result.index] = result.bytes; });
+        setSaveStatus("Downloading cloud snapshot · received " + windowEnd + " of " + chunkCount + " chunks");
     }
 
     const assembled = new Uint8Array(totalBytes);
@@ -320,7 +321,7 @@ async function writeCloudUserSnapshot(uid, userData) {
     try {
         for (let windowStart = 0; windowStart < chunkCount; windowStart += CLOUD_TRANSFER_WINDOW_SIZE) {
             const windowEnd = Math.min(windowStart + CLOUD_TRANSFER_WINDOW_SIZE, chunkCount);
-            await Promise.all(
+            const windowWrites = await Promise.allSettled(
                 Array.from({ length: windowEnd - windowStart }, (_, offset) => windowStart + offset)
                     .map(async index => {
                         const start = index * CLOUD_CHUNK_RAW_BYTES;
@@ -332,6 +333,9 @@ async function writeCloudUserSnapshot(uid, userData) {
                         });
                     })
             );
+            const failedWrite = windowWrites.find(result => result.status === "rejected");
+            if (failedWrite) throw failedWrite.reason;
+            setSaveStatus("Uploading cloud snapshot · sent " + windowEnd + " of " + chunkCount + " chunks");
             if (currentUser?.uid !== uid) throw new Error("Account changed during cloud sync.");
         }
 
