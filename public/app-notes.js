@@ -518,7 +518,8 @@
             const canvas = document.getElementById("notes-draw-canvas");
             if (!canvas || !confirm("Clear all pen strokes on this page? Typed text will stay.")) return;
             canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
-            if (this.noteDraft) this.noteDraft.hasInk = false;
+            // Upload the cleared transparent layer at confirmation to replace any saved strokes.
+            if (this.noteDraft) this.noteDraft.hasInk = true;
         },
 
         getCurrentNotePage() {
