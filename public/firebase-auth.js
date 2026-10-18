@@ -1,19 +1,15 @@
-// =========================================================
-// PrepPro - Firebase Authentication, Offline Cache & Cloud Sync
-// Firebase project: prepyproo
-// =========================================================
-
+// PrepPro authentication and local-first storage.
+// Firebase Authentication identifies the user. The app's ongoing data is stored in IndexedDB.
+// A read-only legacy Firestore path is retained temporarily to migrate existing users' old data.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import {
     getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged,
     connectAuthEmulator
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import {
-    initializeFirestore, connectFirestoreEmulator, persistentLocalCache,
-    persistentMultipleTabManager, doc, setDoc, getDoc, onSnapshot
+    getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// Firebase web configuration is public client configuration, not a server secret.
 const firebaseConfig = {
     apiKey: "AIzaSyCLK-qHTuh1nwCwyVdBpeJF7-8HGLZDshw",
     authDomain: "prepyproo.firebaseapp.com",
@@ -29,43 +25,36 @@ const firebaseApp = useFirebaseEmulators
     ? initializeApp({ ...firebaseConfig, projectId: "demo-prepyproo" }, "prepyproo-local")
     : initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
+if (useFirebaseEmulators) connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
 
-if (useFirebaseEmulators) {
-    connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
-}
-
-// IndexedDB-backed Firestore persistence; supports multiple tabs.
-const db = initializeFirestore(firebaseApp, {
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-});
-
-if (useFirebaseEmulators) {
-    connectFirestoreEmulator(db, "127.0.0.1", 8080);
-    console.info("PrepPro is using local Firebase Auth and Firestore emulators.");
-}
+// Firestore is used only for the one-time legacy-data migration. It is no longer written
+// during ordinary app use and no snapshot listener is installed.
+const legacyDb = getFirestore(firebaseApp);
+if (useFirebaseEmulators) connectFirestoreEmulator(legacyDb, "127.0.0.1", 8080);
 
 const provider = new GoogleAuthProvider();
-
 let currentUser = null;
-let saveQueue = Promise.resolve();
 let authRequestId = 0;
-let cloudListenerUnsubscribe = null;
+let loadNotice = "";
+let idbPromise = null;
+let latestLocalSaveAt = 0;
 
 const DEFAULT_DATA = { subjects: [], xp: 0 };
+const LOCAL_DB_NAME = "preppro-local-data";
+const LOCAL_DB_VERSION = 1;
+const LOCAL_STORE_NAME = "users";
+const LEGACY_MIGRATION_MARKER = "_prepProLocalOnlyMigrationAt";
 const copyDefaultData = () => structuredClone(DEFAULT_DATA);
-const userDocument = (uid) => doc(db, "users", uid);
-const localKey = (uid) => `prepProData_v12_${uid}`;
-const pendingKey = (uid) => `prepProPending_v1_${uid}`;
+const legacyUserDocument = (uid) => doc(legacyDb, "users", uid);
 
 function setStatus(message) {
-    const el = document.getElementById("auth-status");
-    if (el) el.textContent = message;
+    const element = document.getElementById("auth-status");
+    if (element) element.textContent = message;
 }
 
 function setSaveStatus(message) {
-    // Optional UI: add <span id="save-status"></span> to display this status.
-    const el = document.getElementById("save-status");
-    if (el) el.textContent = message;
+    const element = document.getElementById("save-status");
+    if (element) element.textContent = message;
     window.dispatchEvent(new CustomEvent("preppro:savestatus", { detail: { message } }));
 }
 
@@ -84,13 +73,98 @@ function showToast(message, type = "error") {
     else console.error(message);
 }
 
+function isValidData(value) {
+    return !!value && Array.isArray(value.subjects) &&
+        typeof value.xp === "number" && Number.isFinite(value.xp);
+}
+
+function openLocalDatabase() {
+    if (idbPromise) return idbPromise;
+    idbPromise = new Promise((resolve, reject) => {
+        if (!("indexedDB" in window)) {
+            reject(new Error("This browser does not support IndexedDB. Please use a current browser."));
+            return;
+        }
+        const request = indexedDB.open(LOCAL_DB_NAME, LOCAL_DB_VERSION);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(LOCAL_STORE_NAME)) {
+                db.createObjectStore(LOCAL_STORE_NAME, { keyPath: "uid" });
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error("Could not open local storage."));
+        request.onblocked = () => reject(new Error("Local storage upgrade is blocked by another PrepPro tab. Close other tabs and retry."));
+    });
+    return idbPromise;
+}
+
+async function readLocalUserData(uid) {
+    const db = await openLocalDatabase();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(LOCAL_STORE_NAME, "readonly");
+        const request = transaction.objectStore(LOCAL_STORE_NAME).get(uid);
+        request.onsuccess = () => {
+            const record = request.result;
+            resolve(record && isValidData(record.data) ? record : null);
+        };
+        request.onerror = () => reject(request.error || new Error("Could not read local PrepPro data."));
+        transaction.onabort = () => reject(transaction.error || new Error("Local data read was aborted."));
+    });
+}
+
+async function writeLocalUserData(uid, userData) {
+    if (!currentUser || currentUser.uid !== uid) throw new Error("Account changed before saving.");
+    if (!isValidData(userData)) throw new Error("The data being saved has an invalid format.");
+    const db = await openLocalDatabase();
+    const record = {
+        uid,
+        data: structuredClone(userData),
+        updatedAt: Date.now(),
+        schemaVersion: 2
+    };
+    await new Promise((resolve, reject) => {
+        const transaction = db.transaction(LOCAL_STORE_NAME, "readwrite");
+        transaction.objectStore(LOCAL_STORE_NAME).put(record);
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error || new Error("Could not save local PrepPro data."));
+        transaction.onabort = () => reject(transaction.error || new Error("Local data save was aborted."));
+    });
+    latestLocalSaveAt = record.updatedAt;
+    setSaveStatus("Saved on this device");
+    return record;
+}
+
+async function requestPersistentStorage() {
+    try {
+        if (navigator.storage?.persist) {
+            const persisted = await navigator.storage.persist();
+            if (!persisted) setSaveStatus("Saved on this device · Browser may clear inactive storage");
+        }
+        if (navigator.storage?.estimate) {
+            const estimate = await navigator.storage.estimate();
+            const usage = Number(estimate.usage || 0);
+            const quota = Number(estimate.quota || 0);
+            if (quota > 0) {
+                const usedMB = (usage / (1024 * 1024)).toFixed(1);
+                const quotaMB = (quota / (1024 * 1024)).toFixed(0);
+                setSaveStatus("Saved on this device · " + usedMB + " MB used of about " + quotaMB + " MB estimated");
+            }
+        }
+    } catch (error) {
+        console.warn("Could not inspect browser storage quota:", error);
+    }
+}
+
 function renderUser(user) {
     const area = document.getElementById("user-auth-area");
     if (!area) return;
     area.replaceChildren();
 
     const wrapper = document.createElement("div");
-    wrapper.className = "flex items-center gap-3 px-2 w-full";
+    wrapper.className = "flex flex-col gap-3 w-full";
+    const identity = document.createElement("div");
+    identity.className = "flex items-center gap-3 px-2 w-full";
     const avatar = document.createElement("img");
     avatar.className = "w-10 h-10 rounded-full border-2 border-blue-100 shadow-sm";
     avatar.alt = "Profile picture";
@@ -111,166 +185,156 @@ function renderUser(user) {
     logout.textContent = "Log Out";
     logout.addEventListener("click", window.logoutUser);
     details.append(name, email, logout);
-    wrapper.append(avatar, details);
+    identity.append(avatar, details);
+    wrapper.append(identity);
+
+    const transferLabel = document.createElement("p");
+    transferLabel.className = "px-2 text-[10px] uppercase tracking-widest font-black text-slate-500";
+    transferLabel.textContent = "Local data · This browser only";
+    wrapper.append(transferLabel);
+
+    const actionRow = document.createElement("div");
+    actionRow.className = "grid grid-cols-2 gap-2";
+    const exportButton = document.createElement("button");
+    exportButton.type = "button";
+    exportButton.className = "px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200";
+    exportButton.textContent = "Export data";
+    exportButton.addEventListener("click", window.exportPrepProData);
+
+    const importInput = document.createElement("input");
+    importInput.type = "file";
+    importInput.accept = "application/json,.json";
+    importInput.className = "hidden";
+    importInput.id = "preppro-import-data-file";
+    importInput.addEventListener("change", window.importPrepProData);
+    const importButton = document.createElement("button");
+    importButton.type = "button";
+    importButton.className = "px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200";
+    importButton.textContent = "Import data";
+    importButton.addEventListener("click", () => importInput.click());
+    actionRow.append(exportButton, importButton);
+    wrapper.append(actionRow, importInput);
     area.append(wrapper);
 }
 
-function isValidData(value) {
-    return !!value && Array.isArray(value.subjects) &&
-        typeof value.xp === "number" && Number.isFinite(value.xp);
-}
-
-function readLocalData(uid) {
+window.saveUserData = async function (updatedData) {
+    if (!currentUser) throw new Error("You are not signed in.");
     try {
-        const raw = localStorage.getItem(localKey(uid));
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        return isValidData(parsed) ? parsed : null;
+        const record = await writeLocalUserData(currentUser.uid, updatedData);
+        return record;
     } catch (error) {
-        console.warn("Unable to read local cache:", error);
-        return null;
-    }
-}
-
-function cacheUserData(uid, userData) {
-    try {
-        localStorage.setItem(localKey(uid), JSON.stringify(userData));
-        return true;
-    } catch (error) {
-        console.warn("Unable to update local cache:", error);
-        return false;
-    }
-}
-
-function markPending(uid, userData) {
-    try {
-        localStorage.setItem(pendingKey(uid), JSON.stringify({ data: userData, updatedAt: Date.now() }));
-        return true;
-    } catch (error) {
-        console.error("Unable to persist pending changes:", error);
-        return false;
-    }
-}
-
-function readPending(uid) {
-    try {
-        const raw = localStorage.getItem(pendingKey(uid));
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (parsed && isValidData(parsed.data) && Number.isFinite(parsed.updatedAt)) return parsed;
-    } catch (error) {
-        console.warn("Unable to read pending changes:", error);
-    }
-    return null;
-}
-
-function clearPendingIfUnchanged(uid, savedAt) {
-    const currentPending = readPending(uid);
-    // Do not clear a newer edit that was made while an older write was in flight.
-    if (currentPending && currentPending.updatedAt === savedAt) {
-        try { localStorage.removeItem(pendingKey(uid)); }
-        catch (error) { console.warn("Unable to clear pending marker:", error); }
-    }
-}
-
-async function syncPendingToCloud(uid) {
-    const pending = readPending(uid);
-    if (!pending) return;
-    if (!currentUser || currentUser.uid !== uid) throw new Error("Account changed before syncing.");
-
-    setSaveStatus(navigator.onLine ? "Saving to cloud..." : "Saved locally Â· Waiting to sync");
-    // Firestore queues this write in its persistent local cache while offline.
-    // Its promise resolves when the backend acknowledges the write.
-    await setDoc(userDocument(uid), pending.data);
-    clearPendingIfUnchanged(uid, pending.updatedAt);
-
-    if (currentUser?.uid === uid) {
-        setSaveStatus(readPending(uid)
-            ? "Saved locally Â· More changes waiting to sync"
-            : "Saved to cloud");
-    }
-}
-
-// Called by app.js whenever dashboard data changes.
-window.saveUserData = function (updatedData) {
-    if (!currentUser) return Promise.reject(new Error("You are not signed in."));
-    if (!isValidData(updatedData)) {
-        return Promise.reject(new Error("The data being saved has an invalid format."));
-    }
-
-    const uid = currentUser.uid;
-    const snapshot = structuredClone(updatedData);
-    const cacheOk = cacheUserData(uid, snapshot);
-    const pendingOk = markPending(uid, snapshot);
-
-    if (!cacheOk || !pendingOk) {
+        console.error("Local PrepPro save failed:", error);
         setSaveStatus("Local save failed");
-        showToast("Could not save a local copy. Check browser storage settings.", "error");
-        return Promise.reject(new Error("Could not persist the local copy of your changes."));
-    }
-
-    setSaveStatus(navigator.onLine ? "Saving to cloud..." : "Saved locally Â· Waiting to sync");
-
-    // Serialize writes. If offline, the latest pending snapshot remains in localStorage
-    // and is retried on reconnect/reload. Firestore also persists queued writes in IndexedDB.
-    saveQueue = saveQueue.catch(() => {}).then(async () => {
-        if (!currentUser || currentUser.uid !== uid) throw new Error("Account changed before saving.");
-        await syncPendingToCloud(uid);
-    });
-
-    return saveQueue.catch((error) => {
-        console.warn("Cloud save is not yet confirmed:", error);
-        if (currentUser?.uid === uid) {
-            setSaveStatus(navigator.onLine ? "Saved locally Â· Cloud sync pending" : "Saved locally Â· Waiting to sync");
-        }
+        showToast("Could not save locally. Check browser storage space and permissions.", "error");
         throw error;
-    });
+    }
 };
 
+// Preserve the prior public function name for any existing feature code.
 window.syncToCloud = (localData) => window.saveUserData(localData);
+
+window.exportPrepProData = async function () {
+    if (!currentUser) return showToast("Sign in before exporting data.", "error");
+    try {
+        const normalized = window.app?.normalizeData ? window.app.normalizeData(data) : data;
+        const envelope = {
+            app: "PrepPro",
+            formatVersion: 1,
+            userId: currentUser.uid,
+            exportedAt: new Date().toISOString(),
+            data: normalized
+        };
+        const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = "PrepPro-data-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json";
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast("Data exported. Import this JSON on the other device using the same account.", "success");
+    } catch (error) {
+        console.error(error);
+        showToast("Could not export data: " + error.message, "error");
+    }
+};
+
+window.importPrepProData = async function (event) {
+    const input = event.target;
+    const file = input?.files?.[0];
+    if (input) input.value = "";
+    if (!file || !currentUser) return;
+    if (file.size > 100 * 1024 * 1024) return showToast("This import file is too large (100 MB max).", "error");
+    try {
+        const envelope = JSON.parse(await file.text());
+        if (envelope.app !== "PrepPro" || envelope.formatVersion !== 1 || !isValidData(envelope.data)) {
+            throw new Error("This is not a valid PrepPro export file.");
+        }
+        if (envelope.userId !== currentUser.uid) {
+            throw new Error("This export belongs to a different account. Sign in with the account that created it.");
+        }
+        if (!confirm("Replace the data on this device with the imported PrepPro data? This cannot be undone.")) return;
+        const normalized = window.app?.normalizeData ? window.app.normalizeData(envelope.data) : envelope.data;
+        await writeLocalUserData(currentUser.uid, normalized);
+        data = normalized;
+        window.app?.init?.();
+        await requestPersistentStorage();
+        showToast("Data imported and saved on this device.", "success");
+    } catch (error) {
+        console.error(error);
+        showToast("Import failed: " + error.message, "error");
+    }
+};
 
 async function loadUserData(user) {
     const uid = user.uid;
-    const pending = readPending(uid);
-    const localData = readLocalData(uid);
-
-    // Pending local edits take priority over a potentially older cloud copy.
-    if (pending) return pending.data;
-
-    try {
-        const snapshot = await getDoc(userDocument(uid));
-        if (snapshot.exists()) {
-            const cloudData = snapshot.data();
-            if (!isValidData(cloudData)) throw new Error("Your saved data has an unexpected format.");
-            return cloudData;
-        }
-
-        // Do not silently import a local cache into a new account.
-        const initialData = copyDefaultData();
-        await setDoc(userDocument(uid), initialData);
-        return initialData;
-    } catch (error) {
-        // Offline fallback is restricted to this authenticated user's UID-specific cache.
-        if (localData) {
-            setSaveStatus("Offline mode Â· Showing locally cached data");
-            return localData;
-        }
-        throw error;
+    loadNotice = "";
+    const localRecord = await readLocalUserData(uid);
+    if (localRecord) {
+        latestLocalSaveAt = Number(localRecord.updatedAt || 0);
+        return localRecord.data;
     }
+
+    // One-time migration path for data created before the local-first release.
+    // Once one device is migrated, a small marker prevents another device from silently
+    // importing a stale Firestore copy; the user can explicitly transfer the latest export.
+    try {
+        const snapshot = await getDoc(legacyUserDocument(uid));
+        if (snapshot.exists()) {
+            const legacyData = snapshot.data();
+            if (legacyData[LEGACY_MIGRATION_MARKER]) {
+                loadNotice = "No local copy on this device. Import an export from your other device.";
+                const initialData = copyDefaultData();
+                await writeLocalUserData(uid, initialData);
+                return initialData;
+            }
+            const cleanLegacyData = { ...legacyData };
+            delete cleanLegacyData[LEGACY_MIGRATION_MARKER];
+            if (!isValidData(cleanLegacyData)) {
+                throw new Error("Your previous cloud data has an unexpected format.");
+            }
+            await writeLocalUserData(uid, cleanLegacyData);
+            try {
+                await setDoc(legacyUserDocument(uid), {
+                    [LEGACY_MIGRATION_MARKER]: new Date().toISOString()
+                }, { merge: true });
+            } catch (markerError) {
+                console.warn("Could not mark legacy migration; this device's local copy was saved.", markerError);
+            }
+            loadNotice = "Your old cloud data was migrated to this browser. Export it to transfer it to other devices.";
+            return cleanLegacyData;
+        }
+    } catch (error) {
+        console.error("Legacy data migration could not be checked:", error);
+        throw new Error("Could not load local data or check your previous saved data. Connect to the internet and retry.");
+    }
+
+    const initialData = copyDefaultData();
+    await writeLocalUserData(uid, initialData);
+    loadNotice = "New local workspace created. Export/import transfers data between devices.";
+    return initialData;
 }
-
-window.addEventListener("online", () => {
-    if (!currentUser) return;
-    const uid = currentUser.uid;
-    saveQueue = saveQueue.catch(() => {}).then(() => syncPendingToCloud(uid)).catch((error) => {
-        console.warn("Cloud sync retry did not complete:", error);
-        setSaveStatus("Cloud sync pending");
-    });
-});
-
-window.addEventListener("offline", () => {
-    if (currentUser) setSaveStatus("Offline Â· Changes are being saved locally");
-});
 
 window.loginWithGoogle = async function () {
     setStatus("Opening sign-in window...");
@@ -286,7 +350,6 @@ window.loginWithGoogle = async function () {
 
 window.logoutUser = async function () {
     try {
-        // Per-user local cache and pending edits are retained for that same UID.
         await signOut(auth);
     } catch (error) {
         console.error("Logout failed:", error);
@@ -294,13 +357,15 @@ window.logoutUser = async function () {
     }
 };
 
+window.addEventListener("online", () => {
+    if (currentUser) setSaveStatus("Online · Local data remains on this device");
+});
+window.addEventListener("offline", () => {
+    if (currentUser) setSaveStatus("Offline · Saving locally on this device");
+});
+
 onAuthStateChanged(auth, async (user) => {
     const requestId = ++authRequestId;
-    if (cloudListenerUnsubscribe) {
-        cloudListenerUnsubscribe();
-        cloudListenerUnsubscribe = null;
-    }
-
     if (!user) {
         currentUser = null;
         data = copyDefaultData();
@@ -313,69 +378,23 @@ onAuthStateChanged(auth, async (user) => {
 
     currentUser = user;
     showLogin();
-    setStatus("Loading your data...");
-
+    setStatus("Loading this device's saved data...");
     try {
         const loadedData = await loadUserData(user);
         if (requestId !== authRequestId || !currentUser || currentUser.uid !== user.uid) return;
-
         data = loadedData;
-        cacheUserData(user.uid, loadedData);
         renderUser(user);
         showApp();
         setStatus("");
-
         if (typeof app !== "undefined" && typeof app.init === "function") app.init();
-        else throw new Error("PrepPro app is not initialized. Check app.js loading order.");
-
-        // Retry pending local edits after app initialization.
-        if (readPending(user.uid)) {
-            saveQueue = saveQueue.catch(() => {}).then(() => syncPendingToCloud(user.uid)).catch((error) => {
-                console.warn("Pending changes remain queued:", error);
-                setSaveStatus(navigator.onLine ? "Cloud sync pending" : "Saved locally Â· Waiting to sync");
-            });
-        } else {
-            setSaveStatus(navigator.onLine ? "Connected" : "Offline mode");
-        }
-
-        // Listen for changes made on another device. Do not overwrite local pending edits.
-        cloudListenerUnsubscribe = onSnapshot(
-            userDocument(user.uid),
-            { includeMetadataChanges: true },
-            (snapshot) => {
-                if (requestId !== authRequestId || !currentUser || currentUser.uid !== user.uid) return;
-                if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites || !snapshot.exists()) return;
-                if (readPending(user.uid)) return;
-                const remoteData = snapshot.data();
-                if (!isValidData(remoteData)) return;
-                data = remoteData;
-                cacheUserData(user.uid, remoteData);
-                // Only refresh top-level views. Reinitializing during an editor resets navigation
-                // to the dashboard and interrupts creating question sets or questions.
-                const canRefresh = typeof app !== "undefined" &&
-                    typeof app.canRefreshFromCloud === "function" &&
-                    app.canRefreshFromCloud();
-                if (canRefresh) app.refreshCurrentView();
-            },
-            (error) => console.warn("Cloud updates listener failed:", error)
-        );
+        else throw new Error("PrepPro app is not initialized. Check app loading order.");
+        if (loadNotice) showToast(loadNotice, "info");
+        setSaveStatus("Saved on this device");
+        await requestPersistentStorage();
     } catch (error) {
         console.error("Could not load PrepPro data:", error);
         if (requestId !== authRequestId || !currentUser || currentUser.uid !== user.uid) return;
-
-        const localData = readLocalData(user.uid);
-        if (localData) {
-            data = localData;
-            renderUser(user);
-            showApp();
-            setStatus("");
-            setSaveStatus("Offline mode Â· Showing locally cached data");
-            if (typeof app !== "undefined" && typeof app.init === "function") app.init();
-            return;
-        }
-
-        // Don't sign the user out merely because the network is unavailable.
         showLogin();
-        setStatus("Could not load your data. Connect to the internet and try again.");
+        setStatus(error.message || "Could not open your local data. Check storage and retry.");
     }
 });
