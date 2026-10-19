@@ -188,7 +188,7 @@ Then open `http://127.0.0.1:5000`. See [How to test Locally.md](../How%20to%20te
 
 - The pull-request workflow deploys the PR branch to a Firebase Hosting preview.
 - The live Hosting workflow runs on pushes to `main`.
-- A Hosting preview isolates the webpage deployment from `main`, but the client still points to the configured Firebase project when running on a non-localhost hostname. Preview usage can therefore affect the project's Auth/Firestore data. Use emulators for destructive, large-volume, or data-reset testing.
+- A Hosting preview isolates the webpage deployment from `main`, but the client still points to the configured Firebase project on non-localhost hosts. Preview usage can affect that project's Auth/Firestore data. In particular, the current live `main` code writes the complete workspace directly to `users/{uid}`, while this branch uses the same root document for the compact snapshot manifest. Do not use the same account against both builds while those formats differ. Use emulators or a separate Firebase project for preview data until the new code is merged and live.
 
 ## 11. Change and testing guidelines
 
