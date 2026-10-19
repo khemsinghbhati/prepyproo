@@ -185,7 +185,7 @@ function cloudSnapshotChunk(uid, snapshotId, index) {
 async function readCloudUserData(uid, cloudDocument) {
     if (!cloudDocument || typeof cloudDocument !== "object") return null;
     if (!isChunkedCloudManifest(cloudDocument)) {
-        throw new Error("The cloud sync manifest is invalid. The local copy was kept.");
+        throw new Error("The document at users/{uid} exists but does not contain a valid chunked-sync manifest. The current client expects manifest metadata there, not the full workspace data. Check this account document before deleting anything; no blank workspace was created.");
     }
 
     const snapshotId = cloudDocument[CLOUD_SNAPSHOT_ID_FIELD];
@@ -863,9 +863,11 @@ async function loadUserData(user) {
         if (cloudReadError?.code === "unauthenticated" || cloudReadError?.code === "firestore/unauthenticated") {
             throw new Error("Firestore did not recognize the active sign-in. Sign out, sign in again, and retry. No blank workspace was created.");
         }
-        throw new Error("PrepPro could not check or download its saved cloud data" +
-            (cloudReadError?.code ? " (" + cloudReadError.code + ")" : "") +
-            ". Check your internet connection and Firestore access, then reload. No blank workspace was created.");
+        if (cloudReadError?.message) {
+            throw new Error("PrepPro could not load this account's cloud snapshot: " +
+                cloudReadError.message + " Your local data was kept. No blank workspace was created.");
+        }
+        throw new Error("PrepPro could not check or download its saved cloud data. Check your internet connection and Firestore access, then reload. No blank workspace was created.");
     }
 
     const initialData = copyDefaultData();
