@@ -775,7 +775,6 @@ async function loadUserData(user) {
     let cloudReadError = null;
     try {
         // The account root document is the single cloud manifest for every account.
-        // This preserves the active snapshot while relocating its manifest if necessary.
         cloudSnapshot = await getDoc(cloudManifestDocument(uid));
     } catch (error) {
         cloudReadFailed = true;
