@@ -2,7 +2,7 @@
 
 This guide runs PrepPro from the repository with local Firebase emulators. The local app uses IndexedDB in each browser and the Firestore/Auth emulators for account sign-in and cross-device synchronization. Emulator data is separate from the deployed Firebase project.
 
-> **Safety rule:** Use `demo-prepyproo` and `http://127.0.0.1:5000` for local testing. Do not run `firebase deploy` during this workflow. A Hosting preview is not the same as an emulator: the preview frontend points at the Firebase project configured in the client code.
+> **Safety rule:** Use `demo-prepyproo` and `http://127.0.0.1:5000` for local testing. Do not run `firebase deploy` during this workflow. A Hosting preview is not the same as an emulator: the preview frontend points at the Firebase project configured in the client code. Until this branch is merged and the live app is updated, avoid using the same Firebase account in both the current live `main` site and this preview: they currently use different formats for `users/{uid}`.
 
 ## 1. Open PowerShell in the repository
 
