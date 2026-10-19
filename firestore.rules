@@ -7,7 +7,7 @@ service cloud.firestore {
     }
 
     // Each signed-in user can access only their own account and sync data.
-    // The manifest and snapshot chunks are subcollections under the same account UID.
+    // The manifest is on the account root; snapshot metadata and chunks are subcollections.
     match /users/{userId} {
       allow read, write: if isSignedInOwner(userId);
 
