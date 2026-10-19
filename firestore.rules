@@ -1,0 +1,23 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedInOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Each signed-in user can access only their own account and sync data.
+    // The manifest is on the account root; snapshot metadata and chunks are subcollections.
+    match /users/{userId} {
+      allow read, write: if isSignedInOwner(userId);
+
+      match /syncSnapshots/{snapshotId} {
+        allow read, write: if isSignedInOwner(userId);
+
+        match /chunks/{chunkId} {
+          allow read, write: if isSignedInOwner(userId);
+        }
+      }
+    }
+  }
+}

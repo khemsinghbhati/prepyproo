@@ -9,10 +9,10 @@ Object.assign(window.app, {
             <div class="max-w-6xl mx-auto">
                 <div class="mb-10 p-8 bg-slate-900 border border-slate-800 rounded-[2rem] shadow-2xl">
                     <h1 class="text-4xl font-black text-white tracking-tight">${this.escapeHTML(st.name)}</h1>
-                    <p class="text-slate-500 font-bold mt-2 uppercase tracking-widest text-xs">Manage Flashcards & Question Sets</p>
+                    <p class="text-slate-500 font-bold mt-2 uppercase tracking-widest text-xs">Manage Flashcards, Question Sets & Notes</p>
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <!-- Flashcards Section -->
                     <div class="bg-slate-900 rounded-[2rem] border border-slate-800 shadow-2xl overflow-hidden flex flex-col h-[700px]">
                         <div class="p-6 border-b border-slate-800 flex items-center justify-between bg-blue-900/10">
@@ -38,6 +38,21 @@ Object.assign(window.app, {
             `;
         });
         html += `</div></div>`;
+
+        // Notes Section
+        html += `
+                    <div class="bg-slate-900 rounded-[2rem] border border-slate-800 shadow-2xl overflow-hidden flex flex-col h-[700px]">
+                        <div class="p-6 border-b border-slate-800 flex items-center justify-between bg-violet-900/10 gap-3">
+                            <h3 class="font-extrabold text-xl flex items-center gap-3 text-white"><i class="ph-fill ph-notebook text-violet-300 text-2xl"></i> Notes <span class="bg-slate-800 text-slate-400 px-3 py-1 rounded-lg text-xs tracking-widest border border-slate-700">${st.notes.length}</span></h3>
+                            <button onclick="app.openNotes()" class="px-4 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-black tracking-widest uppercase transition-all">Manage</button>
+                        </div>
+                        <div class="p-5 flex-1 overflow-y-auto space-y-4 bg-slate-950/50">
+                            ${st.notes.length === 0
+                                ? '<div class="text-center py-12 text-slate-600 text-xs font-black tracking-widest uppercase border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/50">No notes yet. Add pages for this subtopic.</div>'
+                                : st.notes.map((page, index) => '<div class="flex items-center gap-3 p-4 rounded-xl border border-slate-800 bg-slate-900"><div class="w-9 h-11 rounded-md bg-black border border-slate-700 flex items-center justify-center text-violet-300 font-black text-xs">' + (index + 1) + '</div><div class="min-w-0"><p class="text-sm font-black text-white">' + this.escapeHTML(page.title || ('Page ' + (index + 1))) + '</p><p class="text-[10px] text-slate-500 uppercase tracking-widest mt-1">' + (page.type === 'image' ? 'Image page' : 'Typed / drawn page') + '</p></div></div>').join('')}
+                        </div>
+                    </div>
+        `;
 
         // Question Sets Section
         html += `

@@ -20,6 +20,56 @@ Object.assign(window.app, {
         const xp = Number(normalized.xp);
         normalized.xp = Number.isFinite(xp) && xp >= 0 ? xp : 0;
 
+        const notesSizePresets = {
+            A4: { width: 1240, height: 1754 },
+            A5: { width: 874, height: 1240 },
+            Letter: { width: 1275, height: 1650 },
+            Square: { width: 1400, height: 1400 }
+        };
+        normalized.noteSettings = normalized.noteSettings && typeof normalized.noteSettings === 'object'
+            ? normalized.noteSettings
+            : {};
+        const notesStoredSize = normalized.noteSettings.pageSize && typeof normalized.noteSettings.pageSize === 'object'
+            ? normalized.noteSettings.pageSize
+            : {};
+        const notesPreset = ['A4', 'A5', 'Letter', 'Square', 'Custom'].includes(notesStoredSize.preset)
+            ? notesStoredSize.preset
+            : 'A4';
+        const notesFallbackSize = notesSizePresets[notesPreset] || notesSizePresets.A4;
+        const notesWidth = Number(notesStoredSize.width);
+        const notesHeight = Number(notesStoredSize.height);
+        normalized.noteSettings.pageSize = {
+            preset: notesPreset,
+            width: Number.isFinite(notesWidth) ? Math.min(2500, Math.max(500, Math.round(notesWidth))) : notesFallbackSize.width,
+            height: Number.isFinite(notesHeight) ? Math.min(2500, Math.max(500, Math.round(notesHeight))) : notesFallbackSize.height
+        };
+
+        const normalizeNotesBackground = value => {
+            if (!value || typeof value !== 'object') return null;
+            if (value.type === 'color' && /^#[0-9a-f]{6}$/i.test(String(value.value || ''))) {
+                return { type: 'color', value: String(value.value).toLowerCase() };
+            }
+            if (value.type === 'image' && /^https?:\/\//i.test(String(value.value || ''))) {
+                return { type: 'image', value: String(value.value) };
+            }
+            return null;
+        };
+        const normalizeNotesBackgroundMap = value => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+            return Object.fromEntries(Object.entries(value)
+                .map(([key, background]) => [key, normalizeNotesBackground(background)])
+                .filter(entry => entry[1]));
+        };
+        const notesBackgroundSource = normalized.noteBackgrounds && typeof normalized.noteBackgrounds === 'object'
+            ? normalized.noteBackgrounds
+            : {};
+        normalized.noteBackgrounds = {
+            global: normalizeNotesBackground(notesBackgroundSource.global) || { type: 'color', value: '#000000' },
+            subjects: normalizeNotesBackgroundMap(notesBackgroundSource.subjects),
+            topics: normalizeNotesBackgroundMap(notesBackgroundSource.topics),
+            subtopics: normalizeNotesBackgroundMap(notesBackgroundSource.subtopics)
+        };
+
         normalized.subjects = normalized.subjects.filter(subject => subject && typeof subject === 'object');
         normalized.subjects.forEach((subject, subjectIndex) => {
             subject.id = this.normalizeID(subject.id);
@@ -40,6 +90,61 @@ Object.assign(window.app, {
                     subtopic.isCompleted = Boolean(subtopic.isCompleted);
                     subtopic.flashcards = Array.isArray(subtopic.flashcards) ? subtopic.flashcards : [];
                     subtopic.questionSets = Array.isArray(subtopic.questionSets) ? subtopic.questionSets : [];
+                    subtopic.notes = Array.isArray(subtopic.notes) ? subtopic.notes
+                        .filter(page => page && typeof page === 'object')
+                        .map((page, pageIndex) => {
+                            const pageWidth = Number(page.width);
+                            const pageHeight = Number(page.height);
+                            const background = normalizeNotesBackground(page.background);
+                            const imageUrl = String(page.imageUrl ?? '');
+                            const legacyText = String(page.text ?? '');
+                            const fallbackTextColor = /^#[0-9a-f]{6}$/i.test(String(page.textColor || ''))
+                                ? String(page.textColor).toLowerCase()
+                                : '#ffffff';
+                            const sourceTextBoxes = Array.isArray(page.textBoxes) ? page.textBoxes :
+                                (legacyText.trim() ? [{
+                                    id: generateId(), x: 4, y: 4, width: 92, height: 30,
+                                    text: legacyText, color: fallbackTextColor, fontScale: 2.5
+                                }] : []);
+                            const textBoxes = sourceTextBoxes
+                                .filter(box => box && typeof box === 'object')
+                                .slice(0, 500)
+                                .map(box => {
+                                    const numeric = (value, fallback, min, max) => {
+                                        const number = Number(value);
+                                        return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+                                    };
+                                    const color = /^#[0-9a-f]{6}$/i.test(String(box.color || ''))
+                                        ? String(box.color).toLowerCase()
+                                        : fallbackTextColor;
+                                    return {
+                                        id: this.normalizeID(box.id),
+                                        x: numeric(box.x, 4, 0, 95),
+                                        y: numeric(box.y, 4, 0, 95),
+                                        width: numeric(box.width, 42, 5, 100),
+                                        height: numeric(box.height, 12, 3, 100),
+                                        text: String(box.text ?? ''),
+                                        color,
+                                        fontScale: numeric(box.fontScale, 2.5, 1, 8)
+                                    };
+                                });
+                            return {
+                                ...page,
+                                id: this.normalizeID(page.id),
+                                title: String(page.title ?? `Page ${pageIndex + 1}`),
+                                type: page.type === 'image' ? 'image' : 'canvas',
+                                text: '',
+                                textBoxes,
+                                textColor: fallbackTextColor,
+                                imageUrl,
+                                imagePageUrl: String(page.imagePageUrl ?? (page.type === 'image' ? imageUrl : '')),
+                                foregroundUrl: String(page.foregroundUrl ?? ''),
+                                width: Number.isFinite(pageWidth) ? Math.min(2500, Math.max(500, Math.round(pageWidth))) : normalized.noteSettings.pageSize.width,
+                                height: Number.isFinite(pageHeight) ? Math.min(2500, Math.max(500, Math.round(pageHeight))) : normalized.noteSettings.pageSize.height,
+                                background
+                            };
+                        })
+                        : [];
                     const revisions = Number(subtopic.flashcardRevisions);
                     subtopic.flashcardRevisions = Number.isFinite(revisions) && revisions >= 0 ? revisions : 0;
 
@@ -86,8 +191,10 @@ Object.assign(window.app, {
         }
         try {
             await window.saveUserData(data);
+            return true;
         } catch (error) {
             console.error("PrepPro save failed:", error);
+            return false;
         }
     },
 
@@ -198,6 +305,9 @@ Object.assign(window.app, {
         else if (view === 'set-editor') this.renderSetEditor(container);
         else if (view === 'fc-viewer') this.renderFlashcardViewer(container);
         else if (view === 'quiz-player') this.renderQuizPlayer(container);
+        else if (view === 'notes-manager') this.renderNotesManager(container);
+        else if (view === 'note-page-editor') this.renderNotePageEditor(container);
+        else if (view === 'notes-reader') this.renderNotesReader(container);
         
         this.toggleSidebar(false);
     },
