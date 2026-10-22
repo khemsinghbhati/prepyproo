@@ -10,6 +10,18 @@
     >
     <meta name="theme-color" content="#020617">
 
+    <!-- Set the saved theme before the UI paints; dark is the default. -->
+    <script>
+        (function () {
+            let theme = "dark";
+            try {
+                if (localStorage.getItem("preppro-theme") === "light") theme = "light";
+            } catch (_) {}
+            document.documentElement.setAttribute("data-theme", theme);
+            document.documentElement.style.colorScheme = theme;
+        })();
+    </script>
+
     <title>PrepPro</title>
 
     <!-- Tailwind CSS -->
@@ -48,6 +60,7 @@
     <link rel="stylesheet" href="styles/overlays.css">
     <link rel="stylesheet" href="styles/responsive.css">
     <link rel="stylesheet" href="styles/notes.css">
+    <link rel="stylesheet" href="styles/themes.css">
 </head>
 
 <body class="h-screen w-full flex overflow-hidden bg-slate-950 text-slate-200 selection:bg-blue-500/30">
@@ -163,6 +176,13 @@
                     Analytics
                 </button>
 
+                <!-- Shared subject requests -->
+                <button type="button" onclick="app.openSharedSubjectsInbox()" id="nav-shared-inbox"
+                    class="nav-btn w-full flex items-center gap-4 px-5 py-4 rounded-2xl font-bold transition-all text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 border border-transparent text-sm tracking-wide uppercase">
+                    <i class="ph-fill ph-inbox text-xl" aria-hidden="true"></i>
+                    Shared with me
+                </button>
+
             </nav>
 
 
@@ -253,8 +273,14 @@
                 </div>
 
 
-                <!-- Header Right: XP -->
-                <div class="flex items-center gap-4">
+                <!-- Header Right: Theme and XP -->
+                <div class="flex items-center gap-3 sm:gap-4">
+                    <button type="button" id="theme-toggle-btn" onclick="app.toggleTheme()"
+                        class="flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-slate-300 hover:text-white hover:bg-slate-700 transition-all font-bold text-xs sm:text-sm"
+                        aria-label="Switch to light mode" title="Switch to light mode">
+                        <i id="theme-toggle-icon" class="ph-bold ph-sun text-lg" aria-hidden="true"></i>
+                        <span id="theme-toggle-label" class="hidden sm:inline">Light mode</span>
+                    </button>
 
                     <div
                         class="px-5 py-2 bg-slate-800 border border-yellow-500/30 text-yellow-400 rounded-xl font-black flex items-center gap-2 shadow-[0_0_20px_rgba(234,179,8,0.15)] text-sm tracking-widest"

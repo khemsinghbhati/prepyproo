@@ -1,0 +1,104 @@
+/*
+ * PrepPro theme overrides. Dark mode is the default; light mode changes app chrome
+ * while preserving each note page's saved background, ink, and uploaded images.
+ */
+:root { color-scheme: dark; }
+[data-theme="light"] {
+    color-scheme: light;
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-card: #ffffff;
+    --border-color: #dbe3ee;
+    --text-primary: #0f172a;
+    --text-secondary: #64748b;
+}
+[data-theme="light"] body { background-color: #f8fafc !important; color: #0f172a !important; }
+
+/* Tailwind slate backgrounds used across the application. */
+[data-theme="light"] .bg-slate-950 { background-color: #f8fafc !important; }
+[data-theme="light"] .bg-slate-900 { background-color: #ffffff !important; }
+[data-theme="light"] .bg-slate-800 { background-color: #f1f5f9 !important; }
+[data-theme="light"] .bg-slate-700 { background-color: #e2e8f0 !important; }
+[data-theme="light"] [class~="bg-slate-950/80"] { background-color: rgb(248 250 252 / 80%) !important; }
+[data-theme="light"] [class~="bg-slate-950/50"] { background-color: rgb(248 250 252 / 72%) !important; }
+[data-theme="light"] [class~="bg-slate-900/80"] { background-color: rgb(255 255 255 / 92%) !important; }
+[data-theme="light"] [class~="bg-slate-900/50"] { background-color: rgb(248 250 252 / 92%) !important; }
+[data-theme="light"] [class~="bg-slate-800/70"] { background-color: rgb(241 245 249 / 90%) !important; }
+[data-theme="light"] [class~="bg-slate-800/50"] { background-color: rgb(241 245 249 / 86%) !important; }
+
+/* Text and borders. */
+[data-theme="light"] .text-white { color: #0f172a !important; }
+[data-theme="light"] .text-slate-100 { color: #1e293b !important; }
+[data-theme="light"] .text-slate-200 { color: #334155 !important; }
+[data-theme="light"] .text-slate-300 { color: #475569 !important; }
+[data-theme="light"] .text-slate-400 { color: #64748b !important; }
+[data-theme="light"] .text-slate-500 { color: #64748b !important; }
+[data-theme="light"] .text-slate-600 { color: #64748b !important; }
+[data-theme="light"] .text-slate-700 { color: #475569 !important; }
+[data-theme="light"] .border-slate-800 { border-color: #e2e8f0 !important; }
+[data-theme="light"] .border-slate-700 { border-color: #cbd5e1 !important; }
+[data-theme="light"] .border-slate-600 { border-color: #cbd5e1 !important; }
+[data-theme="light"] [class~="border-slate-800/50"] { border-color: rgb(203 213 225 / 75%) !important; }
+
+/* Keep readable white text on saturated buttons and the brand mark. */
+[data-theme="light"] .bg-blue-600.text-white,
+[data-theme="light"] .bg-indigo-600.text-white,
+[data-theme="light"] .bg-emerald-600.text-white,
+[data-theme="light"] .bg-purple-600.text-white,
+[data-theme="light"] .bg-rose-600.text-white,
+[data-theme="light"] .bg-amber-600.text-white,
+[data-theme="light"] .bg-red-600.text-white,
+[data-theme="light"] .bg-gradient-to-br .text-white { color: #ffffff !important; }
+
+/* Light-mode form controls and hover surfaces. */
+[data-theme="light"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+[data-theme="light"] textarea,
+[data-theme="light"] select {
+    color: #0f172a;
+    background-color: #ffffff;
+    border-color: #cbd5e1;
+}
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder { color: #94a3b8; }
+[data-theme="light"] [class~="hover:bg-slate-700"]:hover,
+[data-theme="light"] [class~="hover:bg-slate-800"]:hover { background-color: #e2e8f0 !important; }
+[data-theme="light"] [class~="hover:text-white"]:hover { color: #0f172a !important; }
+
+/* Components using custom CSS rather than Tailwind utilities. */
+[data-theme="light"] .notes-view { color: #334155; }
+[data-theme="light"] .notes-heading-card,
+[data-theme="light"] .notes-editor-header,
+[data-theme="light"] .notes-reader-heading {
+    background: linear-gradient(135deg, #ffffff, #f1f5f9);
+    border-color: #dbe3ee;
+}
+[data-theme="light"] .notes-heading-card h1,
+[data-theme="light"] .notes-editor-header h1,
+[data-theme="light"] .notes-reader-heading h1,
+[data-theme="light"] .notes-settings-panel h2,
+[data-theme="light"] .notes-pages-header h2,
+[data-theme="light"] .notes-page-card-footer strong,
+[data-theme="light"] .notes-empty h3 { color: #0f172a; }
+[data-theme="light"] .notes-settings-panel,
+[data-theme="light"] .notes-page-card,
+[data-theme="light"] .notes-toolbar,
+[data-theme="light"] .notes-empty,
+[data-theme="light"] .notes-canvas-instructions {
+    background: #ffffff;
+    border-color: #dbe3ee;
+}
+[data-theme="light"] .notes-button-secondary { color: #334155; background: #f1f5f9; border-color: #cbd5e1; }
+[data-theme="light"] .notes-button-secondary:hover:not(:disabled) { background: #e2e8f0; border-color: #94a3b8; }
+[data-theme="light"] .notes-tool-button { color: #334155; background: #f8fafc; border-color: #cbd5e1; }
+[data-theme="light"] .notes-tool-button.is-active { color: #1d4ed8; background: #eff6ff; border-color: #60a5fa; }
+[data-theme="light"] .notes-settings-controls input,
+[data-theme="light"] .notes-settings-controls select,
+[data-theme="light"] .notes-tool-field select,
+[data-theme="light"] .notes-tool-field input[type="color"] { color: #0f172a; background: #ffffff; border-color: #cbd5e1; }
+[data-theme="light"] .notes-page-actions button { color: #334155; background: #f8fafc; border-color: #cbd5e1; }
+[data-theme="light"] .notes-reader-paper { background: #e2e8f0; border-color: #cbd5e1; }
+.notes-page-stage,
+.notes-reader-paper .notes-layered-page {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+}
