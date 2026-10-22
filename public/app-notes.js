@@ -160,18 +160,67 @@
             }
         },
 
-        async exportNotesPDF() {
-            const stData = this.findSubtopic(activeSubtopicId);
-            if (!stData) return this.showToast("Subtopic not found.", "error");
-            const pages = Array.isArray(stData.subtopic.notes) ? stData.subtopic.notes : [];
-            if (!pages.length) return this.showToast("There are no notes pages to export.", "error");
+        async exportNotesPDF(scope = "subtopic", scopeId = activeSubtopicId) {
+            const exportScope = ["subject", "topic", "subtopic"].includes(scope) ? scope : "subtopic";
+            const targetId = scopeId || activeSubtopicId;
+            const exportItems = [];
+            let scopeName = "Notes";
+            let subjectName = "";
 
-            this.showToast("Preparing your notes PDF…", "info");
+            const appendSubtopicPages = (subject, topic, subtopic) => {
+                const pages = Array.isArray(subtopic.notes) ? subtopic.notes : [];
+                const stData = { subject, topic, subtopic };
+                pages.forEach((page, pageIndex) => exportItems.push({
+                    stData,
+                    page,
+                    subtopicPageNumber: pageIndex + 1,
+                    sourceName: subtopic.name
+                }));
+            };
+
+            if (exportScope === "subject") {
+                const subject = data.subjects.find(item => item.id === targetId);
+                if (!subject) return this.showToast("Subject not found.", "error");
+                scopeName = subject.name;
+                subjectName = subject.name;
+                subject.topics.forEach(topic => {
+                    topic.subtopics.forEach(subtopic => appendSubtopicPages(subject, topic, subtopic));
+                });
+            } else if (exportScope === "topic") {
+                let matchedSubject = null;
+                let matchedTopic = null;
+                for (const subject of data.subjects) {
+                    const topic = subject.topics.find(item => item.id === targetId);
+                    if (topic) {
+                        matchedSubject = subject;
+                        matchedTopic = topic;
+                        break;
+                    }
+                }
+                if (!matchedSubject || !matchedTopic) return this.showToast("Topic not found.", "error");
+                scopeName = matchedTopic.name;
+                subjectName = matchedSubject.name;
+                matchedTopic.subtopics.forEach(subtopic => appendSubtopicPages(matchedSubject, matchedTopic, subtopic));
+            } else {
+                const stData = this.findSubtopic(targetId);
+                if (!stData) return this.showToast("Subtopic not found.", "error");
+                scopeName = stData.subtopic.name;
+                subjectName = stData.subject.name;
+                appendSubtopicPages(stData.subject, stData.topic, stData.subtopic);
+            }
+
+            if (!exportItems.length) {
+                return this.showToast("There are no notes pages in this " + exportScope + " to export.", "error");
+            }
+
+            this.showToast("Preparing " + exportScope + " notes PDF…", "info");
             try {
                 const JsPDF = await loadJsPDF();
                 let pdf = null;
-                for (let index = 0; index < pages.length; index += 1) {
-                    const page = pages[index];
+                for (let index = 0; index < exportItems.length; index += 1) {
+                    const item = exportItems[index];
+                    const stData = item.stData;
+                    const page = item.page;
                     const dimensions = getPageImageSize(page);
                     const canvas = document.createElement("canvas");
                     canvas.width = dimensions.width;
@@ -197,22 +246,48 @@
                         drawContain(context, inkImage, dimensions.width, dimensions.height);
                     }
                     (Array.isArray(page.textBoxes) ? page.textBoxes : []).forEach(box => {
-                        drawWrappedText(context, box.text || "", box.color || this.getNoteTextColor(stData, page),
-                            dimensions.width, dimensions.height, box);
+                        drawWrappedText(
+                            context,
+                            box.text || "",
+                            box.color || this.getNoteTextColor(stData, page),
+                            dimensions.width,
+                            dimensions.height,
+                            box
+                        );
                     });
 
                     const orientation = dimensions.width >= dimensions.height ? "landscape" : "portrait";
                     const format = [dimensions.width, dimensions.height];
                     if (!pdf) {
-                        pdf = new JsPDF({ orientation, unit: "px", format, compress: true, hotfixes: ["px_scaling"] });
+                        pdf = new JsPDF({
+                            orientation,
+                            unit: "px",
+                            format,
+                            compress: true,
+                            hotfixes: ["px_scaling"]
+                        });
                     } else {
                         pdf.addPage(format, orientation);
                     }
-                    pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, dimensions.width, dimensions.height, undefined, "FAST");
+                    pdf.addImage(
+                        canvas.toDataURL("image/png"),
+                        "PNG",
+                        0,
+                        0,
+                        dimensions.width,
+                        dimensions.height,
+                        undefined,
+                        "FAST"
+                    );
                 }
+
                 const safePart = value => String(value || "Notes").normalize("NFKD")
-                    .replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "Notes";
-                pdf.save("PrepPro-" + safePart(stData.subject.name) + "-" + safePart(stData.subtopic.name) + "-notes.pdf");
+                    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+                    .replace(/^-+|-+$/g, "")
+                    .slice(0, 70) || "Notes";
+                const filenameParts = ["PrepPro", subjectName, scopeName === subjectName ? "" : scopeName, "notes"]
+                    .filter(Boolean).map(safePart);
+                pdf.save(filenameParts.join("-") + ".pdf");
                 this.showToast("Notes PDF exported.", "success");
             } catch (error) {
                 console.error("Notes PDF export failed:", error);
@@ -307,6 +382,7 @@
             const stData = this.findSubtopic(activeSubtopicId);
             if (!stData) return this.setView("dashboard");
             const st = stData.subtopic;
+            if (this.renumberNotePages(stData)) this.save();
             const size = getStoredSize();
             let html = '<div class="max-w-7xl mx-auto notes-view">' +
                 '<div class="notes-heading-card">' +
@@ -382,6 +458,20 @@
             this.showToast("Default note page size updated.", "success");
         },
 
+        renumberNotePages(stData) {
+            const pages = stData && stData.subtopic && Array.isArray(stData.subtopic.notes)
+                ? stData.subtopic.notes : [];
+            let changed = false;
+            pages.forEach((page, index) => {
+                const expectedTitle = "Page " + (index + 1);
+                if (page.title !== expectedTitle) {
+                    page.title = expectedTitle;
+                    changed = true;
+                }
+            });
+            return changed;
+        },
+
         makeNotePage(index) {
             const stData = this.findSubtopic(activeSubtopicId);
             if (!stData) return null;
@@ -406,6 +496,7 @@
             } else {
                 stData.subtopic.notes.push(page);
             }
+            this.renumberNotePages(stData);
             return page;
         },
 
@@ -456,6 +547,7 @@
             if (index < 0 || target < 0 || target >= pages.length) return;
             const moved = pages.splice(index, 1)[0];
             pages.splice(target, 0, moved);
+            this.renumberNotePages(stData);
             this.save();
             this.setView("notes-manager", true);
         },
@@ -466,6 +558,7 @@
             const page = stData.subtopic.notes.find(item => item.id === pageId);
             if (!page || !confirm("Delete this notes page? This removes it from PrepPro but cannot delete its already-uploaded ImgBB image.")) return;
             stData.subtopic.notes = stData.subtopic.notes.filter(item => item.id !== pageId);
+            this.renumberNotePages(stData);
             this.save();
             this.setView("notes-manager", true);
             this.showToast("Notes page deleted.", "success");

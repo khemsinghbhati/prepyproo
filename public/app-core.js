@@ -276,6 +276,16 @@ Object.assign(window.app, {
         this.showToast(`Switched to ${nextTheme} mode.`, 'success');
     },
 
+    subjectShareErrorMessage(error) {
+        const code = String(error && error.code || "").toLowerCase();
+        const message = String(error && error.message || "");
+        if (code === "permission-denied" || code === "firestore/permission-denied" ||
+            /missing or insufficient permissions/i.test(message)) {
+            return "Firestore denied access to subject sharing. Deploy the updated firestore.rules to the prepyproo project with: firebase deploy --only firestore:rules --project prepyproo";
+        }
+        return message || "The subject-sharing request failed. Please try again.";
+    },
+
     openSubjectShareDialog(subjectId) {
         const subject = data.subjects.find(item => item.id === subjectId);
         if (!subject) return this.showToast('Subject not found.', 'error');
@@ -326,8 +336,9 @@ Object.assign(window.app, {
                 button.disabled = false;
                 button.textContent = 'Send share request';
             }
-            if (status) status.textContent = error.message || 'Could not send the share request.';
-            this.showToast(error.message || 'Could not send the share request.', 'error');
+            const message = this.subjectShareErrorMessage(error);
+            if (status) status.textContent = message;
+            this.showToast(message, 'error');
         }
     },
 
@@ -372,9 +383,10 @@ Object.assign(window.app, {
             }).join('');
         } catch (error) {
             if (container?.isConnected) {
+                const message = this.subjectShareErrorMessage(error);
                 container.innerHTML = `
                     <div class="rounded-2xl border border-red-500/30 bg-red-500/5 p-5">
-                        <p class="text-sm text-red-300">${this.escapeHTML(error.message || 'Could not load shared subject requests.')}</p>
+                        <p class="text-sm text-red-300">${this.escapeHTML(message)}</p>
                         <button type="button" onclick="app.openSharedSubjectsInbox()" class="mt-4 px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 font-bold">Try again</button>
                     </div>`;
             }
@@ -402,7 +414,7 @@ Object.assign(window.app, {
                 button.disabled = false;
                 button.classList.remove('opacity-60');
             }
-            this.showToast(error.message || 'Could not add the shared subject.', 'error');
+            this.showToast(this.subjectShareErrorMessage(error), 'error');
         }
     },
 
