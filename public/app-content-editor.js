@@ -5,6 +5,13 @@ Object.assign(window.app, {
         if (!stData) return;
         const st = stData.subtopic;
 
+        // Repair stale page titles when the subtopic summary is opened, not only
+        // when the full notes manager is opened. Keep the stored titles aligned
+        // with each page's current position after reorder operations.
+        if (typeof this.renumberNotePages === "function" && this.renumberNotePages(stData)) {
+            this.save();
+        }
+
         let html = `
             <div class="max-w-6xl mx-auto">
                 <div class="mb-10 p-8 bg-slate-900 border border-slate-800 rounded-[2rem] shadow-2xl">
@@ -49,7 +56,7 @@ Object.assign(window.app, {
                         <div class="p-5 flex-1 overflow-y-auto space-y-4 bg-slate-950/50">
                             ${st.notes.length === 0
                                 ? '<div class="text-center py-12 text-slate-600 text-xs font-black tracking-widest uppercase border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/50">No notes yet. Add pages for this subtopic.</div>'
-                                : st.notes.map((page, index) => '<div class="flex items-center gap-3 p-4 rounded-xl border border-slate-800 bg-slate-900"><div class="w-9 h-11 rounded-md bg-black border border-slate-700 flex items-center justify-center text-violet-300 font-black text-xs">' + (index + 1) + '</div><div class="min-w-0"><p class="text-sm font-black text-white">' + this.escapeHTML(page.title || ('Page ' + (index + 1))) + '</p><p class="text-[10px] text-slate-500 uppercase tracking-widest mt-1">' + (page.type === 'image' ? 'Image page' : 'Typed / drawn page') + '</p></div></div>').join('')}
+                                : st.notes.map((page, index) => '<div class="flex items-center gap-3 p-4 rounded-xl border border-slate-800 bg-slate-900"><div class="w-9 h-11 rounded-md bg-black border border-slate-700 flex items-center justify-center text-violet-300 font-black text-xs">' + (index + 1) + '</div><div class="min-w-0"><p class="text-sm font-black text-white">' + this.escapeHTML('Page ' + (index + 1)) + '</p><p class="text-[10px] text-slate-500 uppercase tracking-widest mt-1">' + (page.type === 'image' ? 'Image page' : 'Typed / drawn page') + '</p></div></div>').join('')}
                         </div>
                     </div>
         `;

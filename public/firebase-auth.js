@@ -7,7 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import {
     getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, serverTimestamp,
-    collection, getDocs, deleteDoc, query, orderBy, startAfter, limit
+    collection, getDocs, deleteDoc, query, orderBy, startAfter, limit, addDoc, updateDoc, where
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -710,6 +710,87 @@ window.saveUserData = async function (updatedData) {
 
 // Preserve the prior public function name for existing feature code.
 window.syncToCloud = (localData) => window.saveUserData(localData);
+
+function normalizeShareEmail(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+window.createPrepProSubjectShare = async function (subject, recipientEmail) {
+    if (!currentUser) throw new Error("Sign in before sharing a subject.");
+    const email = normalizeShareEmail(recipientEmail);
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error("Enter a valid receiver email address.");
+    }
+    if (email === normalizeShareEmail(currentUser.email)) {
+        throw new Error("You cannot share a subject with your own account.");
+    }
+    if (!subject || typeof subject !== "object" || typeof subject.name !== "string" || !Array.isArray(subject.topics)) {
+        throw new Error("The selected subject has an invalid data format.");
+    }
+    const serializedSubject = JSON.stringify(subject);
+    if (new TextEncoder().encode(serializedSubject).length > 800 * 1024) {
+        throw new Error("This subject is too large to share in one request. Try removing large images or sharing a smaller subject.");
+    }
+    const reference = await addDoc(collection(db, "subjectShares"), {
+        senderUid: currentUser.uid,
+        senderEmail: normalizeShareEmail(currentUser.email),
+        senderName: String(currentUser.displayName || currentUser.email || "PrepPro user").slice(0, 120),
+        recipientEmail: email,
+        subjectName: String(subject.name).slice(0, 180),
+        subjectData: structuredClone(subject),
+        status: "pending",
+        createdAt: serverTimestamp()
+    });
+    return { id: reference.id };
+};
+
+window.listPendingPrepProSubjectShares = async function () {
+    if (!currentUser) throw new Error("Sign in to see shared subject requests.");
+    const email = normalizeShareEmail(currentUser.email);
+    if (!email) throw new Error("Your signed-in account has no email address.");
+    // Query by recipient only so Firestore rules can restrict every returned item to this email.
+    const snapshot = await getDocs(query(collection(db, "subjectShares"), where("recipientEmail", "==", email)));
+    return snapshot.docs
+        .map(documentSnapshot => {
+            const value = documentSnapshot.data();
+            return {
+                id: documentSnapshot.id,
+                senderEmail: value.senderEmail || "",
+                senderName: value.senderName || "",
+                subjectName: value.subjectName || value.subjectData?.name || "Shared subject",
+                subjectData: value.subjectData,
+                status: value.status || "pending",
+                createdAtMillis: value.createdAt && typeof value.createdAt.toMillis === "function"
+                    ? value.createdAt.toMillis() : 0
+            };
+        })
+        .filter(item => item.status === "pending")
+        .sort((first, second) => second.createdAtMillis - first.createdAtMillis);
+};
+
+window.acceptPrepProSubjectShare = async function (shareId) {
+    if (!currentUser) throw new Error("Sign in to accept a shared subject.");
+    if (!shareId || typeof shareId !== "string") throw new Error("Invalid subject share request.");
+    const reference = doc(db, "subjectShares", shareId);
+    const snapshot = await getDoc(reference);
+    if (!snapshot.exists()) throw new Error("This subject share request no longer exists.");
+    const share = snapshot.data();
+    if (normalizeShareEmail(share.recipientEmail) !== normalizeShareEmail(currentUser.email)) {
+        throw new Error("This subject share request belongs to a different email address.");
+    }
+    const subjectName = String(share.subjectName || share.subjectData?.name || "Shared subject");
+    if (share.status !== "pending") return { subjectName, alreadyImported: true };
+    const alreadyImported = Array.isArray(data.subjects) &&
+        data.subjects.some(subject => subject.sharedShareId === shareId);
+    if (!alreadyImported) {
+        if (!window.app || typeof window.app.importSharedSubject !== "function") {
+            throw new Error("PrepPro is not ready to import this subject. Reload and try again.");
+        }
+        await window.app.importSharedSubject(share.subjectData, shareId);
+    }
+    await updateDoc(reference, { status: "accepted", acceptedAt: serverTimestamp() });
+    return { subjectName, alreadyImported };
+};
 
 window.exportPrepProData = async function () {
     if (!currentUser) return showToast("Sign in before exporting data.", "error");

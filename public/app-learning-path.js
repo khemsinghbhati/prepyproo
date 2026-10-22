@@ -408,6 +408,9 @@ Object.assign(window.app, {
                 subjCompleted += t.subtopics.filter(st => st.isCompleted).length;
             });
             let subjProgress = subjTotal === 0 ? 0 : Math.round((subjCompleted/subjTotal)*100);
+            const subjectNotePageCount = subject.topics.reduce((total, topic) =>
+                total + topic.subtopics.reduce((topicTotal, subtopic) =>
+                    topicTotal + (Array.isArray(subtopic.notes) ? subtopic.notes.length : 0), 0), 0);
 
             html += `
                 <div class="relative drag-drop-target" ondragover="app.allowDrop(event, 'subject', null)" ondrop="app.dropItem(event, 'subject', '${subject.id}', null)">
@@ -422,6 +425,8 @@ Object.assign(window.app, {
                                         <i class="ph-bold ${collapsedSubjectIds.has(subject.id) ? 'ph-caret-right' : 'ph-caret-down'} text-lg"></i>
                                     </button>
                                     <h3 class="text-3xl sm:text-4xl font-black text-white tracking-tight">${this.escapeHTML(subject.name)}</h3>
+                                    <button onclick="event.stopPropagation(); app.openSubjectShareDialog('${subject.id}')" class="shrink-0 p-2 bg-slate-800 hover:bg-blue-500/10 border border-slate-700 hover:border-blue-500/40 rounded-lg transition-colors text-slate-400 hover:text-blue-400 shadow-sm" title="Share subject" aria-label="Share subject"><i class="ph-bold ph-share-network text-lg"></i></button>
+                                    ${!isEditMode && subjectNotePageCount > 0 ? `<button onclick="event.stopPropagation(); app.exportNotesPDF('subject', '${subject.id}')" class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/30 rounded-lg text-violet-300 font-extrabold text-xs transition-colors" title="Export all subject notes to PDF"><i class="ph-bold ph-file-pdf text-base"></i><span>Export PDF</span><span class="opacity-70">(${subjectNotePageCount})</span></button>` : ''}
                                     ${isEditMode ? `
                                         <button draggable="true" ondragstart="app.startDrag(event, 'subject', '${subject.id}')" ondragend="app.endDrag(event)" onclick="event.stopPropagation()" class="p-2 bg-slate-800 hover:bg-blue-500/20 border border-slate-700 hover:border-blue-500/40 rounded-lg transition-colors text-slate-400 hover:text-blue-400 shadow-sm cursor-grab active:cursor-grabbing" title="Drag to reorder subject" aria-label="Drag to reorder subject"><i class="ph-bold ph-dots-six-vertical"></i></button>
                                         <button onclick="app.editSubject('${subject.id}')" class="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors text-slate-400 hover:text-white shadow-sm" title="Rename"><i class="ph-bold ph-pencil-simple"></i></button>
@@ -463,6 +468,8 @@ Object.assign(window.app, {
                 let topTotal = topic.subtopics.length;
                 let topCompleted = topic.subtopics.filter(st => st.isCompleted).length;
                 let topProgress = topTotal === 0 ? 0 : Math.round((topCompleted/topTotal)*100);
+                const topicNotePageCount = topic.subtopics.reduce((total, subtopic) =>
+                    total + (Array.isArray(subtopic.notes) ? subtopic.notes.length : 0), 0);
 
                 html += `
                     <div class="w-full z-10 relative drag-drop-target" ondragover="app.allowDrop(event, 'topic', '${subject.id}')" ondrop="app.dropItem(event, 'topic', '${topic.id}', '${subject.id}')">
@@ -476,6 +483,7 @@ Object.assign(window.app, {
                                     <i class="ph-bold ${collapsedTopicIds.has(topic.id) ? 'ph-caret-right' : 'ph-caret-down'} text-lg"></i>
                                 </button>
                                 <h4 class="text-xl font-extrabold text-white tracking-wide">${this.escapeHTML(topic.name)}</h4>
+                                ${!isEditMode && topicNotePageCount > 0 ? `<button onclick="event.stopPropagation(); app.exportNotesPDF('topic', '${topic.id}')" class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/30 rounded-lg text-violet-300 font-extrabold text-xs transition-colors" title="Export all topic notes to PDF"><i class="ph-bold ph-file-pdf text-base"></i><span>Export PDF</span><span class="opacity-70">(${topicNotePageCount})</span></button>` : ''}
                                 ${isEditMode ? `
                                     <div class="flex gap-2">
                                         <button draggable="true" ondragstart="app.startDrag(event, 'topic', '${topic.id}', '${subject.id}')" ondragend="app.endDrag(event)" onclick="event.stopPropagation()" class="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-slate-800 rounded-lg transition-colors cursor-grab active:cursor-grabbing" title="Drag to reorder topic" aria-label="Drag to reorder topic"><i class="ph-bold ph-dots-six-vertical"></i></button>
@@ -538,6 +546,7 @@ Object.assign(window.app, {
                                 <span class="text-[15px] font-black leading-tight mt-auto flex items-start justify-between gap-2 w-full text-slate-200 group-hover:text-white transition-colors">
                                     <span>${this.escapeHTML(st.name)}</span>
                                 </span>
+                                ${!isEditMode && st.notes.length > 0 ? `<button type="button" onclick="event.stopPropagation(); app.exportNotesPDF('subtopic', '${st.id}')" class="mt-4 w-full inline-flex items-center justify-center gap-1.5 px-2 py-2 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/30 rounded-lg text-violet-300 font-extrabold text-[10px] uppercase tracking-wide transition-colors"><i class="ph-bold ph-file-pdf text-sm"></i> Export PDF (${st.notes.length})</button>` : ''}
                             </div>
                         </div>
                     `;

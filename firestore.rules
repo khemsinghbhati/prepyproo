@@ -13,11 +13,57 @@ service cloud.firestore {
 
       match /syncSnapshots/{snapshotId} {
         allow read, write: if isSignedInOwner(userId);
-
-        match /chunks/{chunkId} {
-          allow read, write: if isSignedInOwner(userId);
-        }
       }
+
+      match /chunks/{chunkId} {
+        allow read, write: if isSignedInOwner(userId);
+      }
+    }
+
+    match /subjectShares/{shareId} {
+      function isShareSender() {
+        return request.auth != null && resource.data.senderUid == request.auth.uid;
+      }
+
+      function isShareRecipient() {
+        return request.auth != null
+          && request.auth.token.email is string
+          // The client stores recipientEmail in lowercase, and the inbox query filters
+          // by this exact field. Keep the resource field unmodified so Firestore can
+          // prove the list query is constrained to the authenticated recipient.
+          && resource.data.recipientEmail is string
+          && resource.data.recipientEmail == request.auth.token.email.lower();
+      }
+
+      allow create: if request.auth != null
+        && request.auth.token.email is string
+        && request.resource.data.keys().hasOnly([
+          'senderUid', 'senderEmail', 'senderName', 'recipientEmail',
+          'subjectName', 'subjectData', 'status', 'createdAt'
+        ])
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.senderEmail is string
+        && request.resource.data.senderEmail == request.auth.token.email.lower()
+        && request.resource.data.recipientEmail is string
+        && request.resource.data.recipientEmail == request.resource.data.recipientEmail.lower()
+        && request.resource.data.recipientEmail.size() > 3
+        && request.resource.data.subjectName is string
+        && request.resource.data.subjectData is map
+        && request.resource.data.subjectData.name is string
+        && request.resource.data.subjectData.topics is list
+        && request.resource.data.status == 'pending';
+
+      // Keep list authorization aligned with the recipientEmail equality query in the client.
+      allow list: if isShareRecipient();
+      allow get: if isShareSender() || isShareRecipient();
+
+      // Only recipients can accept pending requests; the rest of the shared payload is immutable.
+      allow update: if isShareRecipient()
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedAt']);
+
+      allow delete: if isShareSender() || isShareRecipient();
     }
   }
 }

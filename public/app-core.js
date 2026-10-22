@@ -2,6 +2,7 @@
 Object.assign(window.app, {
     init() {
         data = this.normalizeData(data);
+        this.applyTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark', false);
         this.updateUI();
         this.setView('dashboard');
     },
@@ -247,6 +248,205 @@ Object.assign(window.app, {
 
     updateXPHeader() {
         document.getElementById('header-xp').textContent = `${data.xp} XP`;
+    },
+
+    applyTheme(theme, persist = true) {
+        const nextTheme = theme === 'light' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', nextTheme);
+        document.documentElement.style.colorScheme = nextTheme;
+        if (persist) {
+            try { localStorage.setItem('preppro-theme', nextTheme); } catch (_) {}
+        }
+        const isDark = nextTheme === 'dark';
+        const button = document.getElementById('theme-toggle-btn');
+        const icon = document.getElementById('theme-toggle-icon');
+        const label = document.getElementById('theme-toggle-label');
+        if (button) {
+            button.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+            button.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+        }
+        if (icon) icon.className = `ph-bold ${isDark ? 'ph-sun' : 'ph-moon'} text-lg`;
+        if (label) label.textContent = isDark ? 'Light mode' : 'Dark mode';
+    },
+
+    toggleTheme() {
+        const currentTheme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+        const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        this.applyTheme(nextTheme);
+        this.showToast(`Switched to ${nextTheme} mode.`, 'success');
+    },
+
+    subjectShareErrorMessage(error) {
+        const code = String(error && error.code || "").toLowerCase();
+        const message = String(error && error.message || "");
+        if (code === "permission-denied" || code === "firestore/permission-denied" ||
+            /missing or insufficient permissions/i.test(message)) {
+            return "Firestore denied access to subject sharing. Deploy the updated firestore.rules to the prepyproo project with: firebase deploy --only firestore:rules --project prepyproo";
+        }
+        return message || "The subject-sharing request failed. Please try again.";
+    },
+
+    openSubjectShareDialog(subjectId) {
+        const subject = data.subjects.find(item => item.id === subjectId);
+        if (!subject) return this.showToast('Subject not found.', 'error');
+        const html = `
+            <div class="space-y-5">
+                <p class="text-sm text-slate-400 leading-relaxed">
+                    Share <strong class="text-slate-100">${this.escapeHTML(subject.name)}</strong> with another PrepPro user.
+                    They can review the request and add a copy to their own learning path.
+                </p>
+                <form onsubmit="event.preventDefault(); app.sendSubjectShare('${this.escapeHTML(subjectId)}')">
+                    <label for="subject-share-email" class="block text-xs font-black text-slate-500 mb-2 uppercase tracking-widest">Receiver email address</label>
+                    <input id="subject-share-email" type="email" required autocomplete="email" placeholder="name@example.com"
+                        class="w-full px-4 py-3 rounded-xl border border-slate-700 bg-slate-950 text-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none">
+                    <p class="text-xs text-slate-500 mt-2">The receiver must sign in to PrepPro using this email address.</p>
+                    <div id="subject-share-status" class="min-h-4 text-xs text-slate-400 mt-3" role="status" aria-live="polite"></div>
+                    <button id="subject-share-send" type="submit" class="w-full mt-3 py-3.5 bg-blue-600 text-white font-black rounded-xl hover:bg-blue-500 transition-all">Send share request</button>
+                </form>
+            </div>`;
+        this.showModal('Share subject', html);
+        setTimeout(() => document.getElementById('subject-share-email')?.focus(), 100);
+    },
+
+    async sendSubjectShare(subjectId) {
+        const subject = data.subjects.find(item => item.id === subjectId);
+        const input = document.getElementById('subject-share-email');
+        const button = document.getElementById('subject-share-send');
+        const status = document.getElementById('subject-share-status');
+        if (!subject || !input) return this.showToast('Could not find the subject or email field.', 'error');
+        const email = input.value.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            input.focus();
+            return this.showToast('Enter a valid email address.', 'error');
+        }
+        if (typeof window.createPrepProSubjectShare !== 'function') {
+            return this.showToast('Subject sharing is not available. Check your Firebase connection.', 'error');
+        }
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'Sending…';
+        }
+        if (status) status.textContent = 'Sending the subject request…';
+        try {
+            await window.createPrepProSubjectShare(structuredClone(subject), email);
+            this.closeModal();
+            this.showToast(`Shared "${subject.name}" with ${email}. The receiver can open it from Shared with me.`, 'success');
+        } catch (error) {
+            if (button) {
+                button.disabled = false;
+                button.textContent = 'Send share request';
+            }
+            const message = this.subjectShareErrorMessage(error);
+            if (status) status.textContent = message;
+            this.showToast(message, 'error');
+        }
+    },
+
+    async openSharedSubjectsInbox() {
+        this.showModal('Shared with me', '<div id="shared-subject-inbox-content" class="space-y-3"><p class="text-sm text-slate-400">Loading shared subject requests…</p></div>');
+        const container = document.getElementById('shared-subject-inbox-content');
+        try {
+            if (typeof window.listPendingPrepProSubjectShares !== 'function') {
+                throw new Error('Subject sharing is not available. Check your Firebase connection.');
+            }
+            const requests = await window.listPendingPrepProSubjectShares();
+            if (!container?.isConnected) return;
+            if (!requests.length) {
+                container.innerHTML = `
+                    <div class="rounded-2xl border border-slate-700 border-dashed bg-slate-950/50 p-8 text-center">
+                        <i class="ph-bold ph-inbox text-4xl text-slate-500" aria-hidden="true"></i>
+                        <h4 class="text-lg font-black text-slate-200 mt-3">No pending subject requests</h4>
+                        <p class="text-sm text-slate-500 mt-2">Subjects shared with your signed-in email will appear here.</p>
+                    </div>`;
+                return;
+            }
+            container.innerHTML = requests.map(request => {
+                const id = this.escapeHTML(request.id);
+                const subjectName = this.escapeHTML(request.subjectName || 'Shared subject');
+                const sender = this.escapeHTML(request.senderName || request.senderEmail || 'Another PrepPro user');
+                return `
+                    <button id="share-request-${id}" type="button" onclick="app.acceptSharedSubject('${id}')"
+                        class="w-full text-left rounded-2xl border border-slate-700 bg-slate-800/70 p-4 sm:p-5 hover:border-blue-500/60 hover:bg-blue-500/5 transition-all"
+                        aria-label="Add shared subject ${subjectName}">
+                        <div class="flex items-start gap-3">
+                            <div class="w-11 h-11 shrink-0 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center">
+                                <i class="ph-fill ph-folder-notch-open text-2xl" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-[10px] text-blue-400 font-black uppercase tracking-widest">Subject share request</p>
+                                <h4 class="font-black text-slate-100 mt-1 break-words">${subjectName}</h4>
+                                <p class="text-xs text-slate-400 mt-1">Shared by ${sender}</p>
+                                <p class="text-xs text-blue-400 font-extrabold mt-3">Click to add to your learning path →</p>
+                            </div>
+                        </div>
+                    </button>`;
+            }).join('');
+        } catch (error) {
+            if (container?.isConnected) {
+                const message = this.subjectShareErrorMessage(error);
+                container.innerHTML = `
+                    <div class="rounded-2xl border border-red-500/30 bg-red-500/5 p-5">
+                        <p class="text-sm text-red-300">${this.escapeHTML(message)}</p>
+                        <button type="button" onclick="app.openSharedSubjectsInbox()" class="mt-4 px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 font-bold">Try again</button>
+                    </div>`;
+            }
+        }
+    },
+
+    async acceptSharedSubject(shareId) {
+        const button = document.getElementById('share-request-' + shareId);
+        if (button) {
+            button.disabled = true;
+            button.classList.add('opacity-60');
+        }
+        try {
+            if (typeof window.acceptPrepProSubjectShare !== 'function') {
+                throw new Error('Subject sharing is not available. Check your Firebase connection.');
+            }
+            const result = await window.acceptPrepProSubjectShare(shareId);
+            this.closeModal();
+            this.setView('dashboard');
+            this.showToast(result.alreadyImported
+                ? `"${result.subjectName}" was already added to your learning path.`
+                : `Added "${result.subjectName}" to your learning path.`, 'success');
+        } catch (error) {
+            if (button) {
+                button.disabled = false;
+                button.classList.remove('opacity-60');
+            }
+            this.showToast(this.subjectShareErrorMessage(error), 'error');
+        }
+    },
+
+    async importSharedSubject(sourceSubject, shareId) {
+        if (!sourceSubject || typeof sourceSubject !== 'object' || !Array.isArray(sourceSubject.topics)) {
+            throw new Error('This shared subject has an invalid data format.');
+        }
+        if (data.subjects.some(subject => subject.sharedShareId === shareId)) return false;
+        const importedSubject = structuredClone(sourceSubject);
+        const resetAndRekey = value => {
+            if (Array.isArray(value)) {
+                value.forEach(resetAndRekey);
+                return;
+            }
+            if (!value || typeof value !== 'object') return;
+            Object.keys(value).forEach(key => {
+                if (key === 'id') value[key] = generateId();
+                else if (key === 'isCompleted') value[key] = false;
+                else if (key === 'history' && Array.isArray(value[key])) value[key] = [];
+                else if (key === 'flashcardRevisions') value[key] = 0;
+                else resetAndRekey(value[key]);
+            });
+        };
+        resetAndRekey(importedSubject);
+        importedSubject.sharedShareId = String(shareId);
+        data.subjects.push(importedSubject);
+        const saved = await this.save();
+        if (!saved) {
+            data.subjects = data.subjects.filter(subject => subject !== importedSubject);
+            throw new Error('The shared subject could not be saved. Please try again.');
+        }
+        return true;
     },
 
     toggleSidebar(force) {

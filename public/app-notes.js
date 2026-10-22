@@ -64,6 +64,29 @@
         });
     }
 
+    let jsPdfLoadPromise = null;
+
+    function loadJsPDF() {
+        if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+        if (!jsPdfLoadPromise) {
+            jsPdfLoadPromise = new Promise(function (resolve, reject) {
+                const script = document.createElement("script");
+                script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+                script.async = true;
+                script.onload = function () {
+                    if (window.jspdf && window.jspdf.jsPDF) resolve(window.jspdf.jsPDF);
+                    else reject(new Error("The PDF library loaded without its jsPDF module."));
+                };
+                script.onerror = function () {
+                    jsPdfLoadPromise = null;
+                    reject(new Error("Could not load the PDF export library. Check your internet connection and retry."));
+                };
+                document.head.appendChild(script);
+            });
+        }
+        return jsPdfLoadPromise;
+    }
+
     function drawCover(context, image, width, height) {
         const scale = Math.max(width / image.width, height / image.height);
         const sw = width / scale;
@@ -127,11 +150,148 @@
         openNotes() {
             const stData = this.findSubtopic(activeSubtopicId);
             if (!stData) return this.showToast("Subtopic not found.", "error");
+            // This overlay otherwise remains above the notes view in Learner mode.
+            document.getElementById("action-sheet")?.classList.add("hidden");
             if (isEditMode) {
                 this.setView("notes-manager");
             } else {
                 this.notesReaderIndex = 0;
                 this.setView("notes-reader");
+            }
+        },
+
+        async exportNotesPDF(scope = "subtopic", scopeId = activeSubtopicId) {
+            const exportScope = ["subject", "topic", "subtopic"].includes(scope) ? scope : "subtopic";
+            const targetId = scopeId || activeSubtopicId;
+            const exportItems = [];
+            let scopeName = "Notes";
+            let subjectName = "";
+
+            const appendSubtopicPages = (subject, topic, subtopic) => {
+                const pages = Array.isArray(subtopic.notes) ? subtopic.notes : [];
+                const stData = { subject, topic, subtopic };
+                pages.forEach((page, pageIndex) => exportItems.push({
+                    stData,
+                    page,
+                    subtopicPageNumber: pageIndex + 1,
+                    sourceName: subtopic.name
+                }));
+            };
+
+            if (exportScope === "subject") {
+                const subject = data.subjects.find(item => item.id === targetId);
+                if (!subject) return this.showToast("Subject not found.", "error");
+                scopeName = subject.name;
+                subjectName = subject.name;
+                subject.topics.forEach(topic => {
+                    topic.subtopics.forEach(subtopic => appendSubtopicPages(subject, topic, subtopic));
+                });
+            } else if (exportScope === "topic") {
+                let matchedSubject = null;
+                let matchedTopic = null;
+                for (const subject of data.subjects) {
+                    const topic = subject.topics.find(item => item.id === targetId);
+                    if (topic) {
+                        matchedSubject = subject;
+                        matchedTopic = topic;
+                        break;
+                    }
+                }
+                if (!matchedSubject || !matchedTopic) return this.showToast("Topic not found.", "error");
+                scopeName = matchedTopic.name;
+                subjectName = matchedSubject.name;
+                matchedTopic.subtopics.forEach(subtopic => appendSubtopicPages(matchedSubject, matchedTopic, subtopic));
+            } else {
+                const stData = this.findSubtopic(targetId);
+                if (!stData) return this.showToast("Subtopic not found.", "error");
+                scopeName = stData.subtopic.name;
+                subjectName = stData.subject.name;
+                appendSubtopicPages(stData.subject, stData.topic, stData.subtopic);
+            }
+
+            if (!exportItems.length) {
+                return this.showToast("There are no notes pages in this " + exportScope + " to export.", "error");
+            }
+
+            this.showToast("Preparing " + exportScope + " notes PDF…", "info");
+            try {
+                const JsPDF = await loadJsPDF();
+                let pdf = null;
+                for (let index = 0; index < exportItems.length; index += 1) {
+                    const item = exportItems[index];
+                    const stData = item.stData;
+                    const page = item.page;
+                    const dimensions = getPageImageSize(page);
+                    const canvas = document.createElement("canvas");
+                    canvas.width = dimensions.width;
+                    canvas.height = dimensions.height;
+                    const context = canvas.getContext("2d");
+                    if (!context) throw new Error("The notes page canvas could not be created.");
+
+                    const background = this.getNoteBackground(stData, page);
+                    if (background.type === "image") {
+                        const backgroundImage = await loadImage(background.value);
+                        drawCover(context, backgroundImage, dimensions.width, dimensions.height);
+                    } else {
+                        context.fillStyle = validColor(background.value) ? background.value : "#000000";
+                        context.fillRect(0, 0, dimensions.width, dimensions.height);
+                    }
+                    const pageImageUrl = page.imagePageUrl || page.imageUrl;
+                    if (pageImageUrl) {
+                        const pageImage = await loadImage(pageImageUrl);
+                        drawContain(context, pageImage, dimensions.width, dimensions.height);
+                    }
+                    if (page.foregroundUrl) {
+                        const inkImage = await loadImage(page.foregroundUrl);
+                        drawContain(context, inkImage, dimensions.width, dimensions.height);
+                    }
+                    (Array.isArray(page.textBoxes) ? page.textBoxes : []).forEach(box => {
+                        drawWrappedText(
+                            context,
+                            box.text || "",
+                            box.color || this.getNoteTextColor(stData, page),
+                            dimensions.width,
+                            dimensions.height,
+                            box
+                        );
+                    });
+
+                    const orientation = dimensions.width >= dimensions.height ? "landscape" : "portrait";
+                    const format = [dimensions.width, dimensions.height];
+                    if (!pdf) {
+                        pdf = new JsPDF({
+                            orientation,
+                            unit: "px",
+                            format,
+                            compress: true,
+                            hotfixes: ["px_scaling"]
+                        });
+                    } else {
+                        pdf.addPage(format, orientation);
+                    }
+                    pdf.addImage(
+                        canvas.toDataURL("image/png"),
+                        "PNG",
+                        0,
+                        0,
+                        dimensions.width,
+                        dimensions.height,
+                        undefined,
+                        "FAST"
+                    );
+                }
+
+                const safePart = value => String(value || "Notes").normalize("NFKD")
+                    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+                    .replace(/^-+|-+$/g, "")
+                    .slice(0, 70) || "Notes";
+                const filenameParts = ["PrepPro", subjectName, scopeName === subjectName ? "" : scopeName, "notes"]
+                    .filter(Boolean).map(safePart);
+                pdf.save(filenameParts.join("-") + ".pdf");
+                this.showToast("Notes PDF exported.", "success");
+            } catch (error) {
+                console.error("Notes PDF export failed:", error);
+                this.showToast(error.message || "Could not export notes to PDF.", "error");
             }
         },
 
@@ -222,12 +382,14 @@
             const stData = this.findSubtopic(activeSubtopicId);
             if (!stData) return this.setView("dashboard");
             const st = stData.subtopic;
+            if (this.renumberNotePages(stData)) this.save();
             const size = getStoredSize();
             let html = '<div class="max-w-7xl mx-auto notes-view">' +
                 '<div class="notes-heading-card">' +
                 '<div><p class="notes-eyebrow">SUBTOPIC NOTES</p><h1>' + this.escapeHTML(st.name) + '</h1>' +
                 '<p class="notes-muted">Create pages, write, draw, and organize your notes.</p></div>' +
-                '<div class="notes-heading-actions"><button class="notes-button notes-button-primary" onclick="app.addNotePage()">+ Blank Page</button>' +
+                '<div class="notes-heading-actions"><button class="notes-button notes-button-secondary" onclick="app.exportNotesPDF()"><i class="ph-bold ph-file-pdf"></i> Export PDF</button>' +
+                '<button class="notes-button notes-button-primary" onclick="app.addNotePage()">+ Blank Page</button>' +
                 '<label class="notes-button notes-button-secondary" for="notes-page-file">Upload Image Page</label>' +
                 '<input id="notes-page-file" class="notes-visually-hidden" type="file" accept="image/*" onchange="app.uploadNotePageFile(event)"></div></div>' +
                 '<section class="notes-settings-panel"><div><h2>Page settings</h2><p class="notes-muted">Size is the default for new pages. You can resize the page you are editing too.</p></div>' +
@@ -296,6 +458,20 @@
             this.showToast("Default note page size updated.", "success");
         },
 
+        renumberNotePages(stData) {
+            const pages = stData && stData.subtopic && Array.isArray(stData.subtopic.notes)
+                ? stData.subtopic.notes : [];
+            let changed = false;
+            pages.forEach((page, index) => {
+                const expectedTitle = "Page " + (index + 1);
+                if (page.title !== expectedTitle) {
+                    page.title = expectedTitle;
+                    changed = true;
+                }
+            });
+            return changed;
+        },
+
         makeNotePage(index) {
             const stData = this.findSubtopic(activeSubtopicId);
             if (!stData) return null;
@@ -320,6 +496,7 @@
             } else {
                 stData.subtopic.notes.push(page);
             }
+            this.renumberNotePages(stData);
             return page;
         },
 
@@ -370,6 +547,7 @@
             if (index < 0 || target < 0 || target >= pages.length) return;
             const moved = pages.splice(index, 1)[0];
             pages.splice(target, 0, moved);
+            this.renumberNotePages(stData);
             this.save();
             this.setView("notes-manager", true);
         },
@@ -380,6 +558,7 @@
             const page = stData.subtopic.notes.find(item => item.id === pageId);
             if (!page || !confirm("Delete this notes page? This removes it from PrepPro but cannot delete its already-uploaded ImgBB image.")) return;
             stData.subtopic.notes = stData.subtopic.notes.filter(item => item.id !== pageId);
+            this.renumberNotePages(stData);
             this.save();
             this.setView("notes-manager", true);
             this.showToast("Notes page deleted.", "success");
@@ -402,6 +581,7 @@
                 '<span class="notes-page-number">' + (index + 1) + ' / ' + pages.length + '</span></div>' +
                 '<div class="notes-reader-paper">' + this.renderNoteLayers(stData, page, false) + '</div>' +
                 '<div class="notes-reader-controls"><button class="notes-button notes-button-secondary" ' + (index === 0 ? "disabled" : "") + ' onclick="app.navigateNoteReader(-1)">← Previous</button>' +
+                '<button class="notes-button notes-button-secondary" onclick="app.exportNotesPDF()"><i class="ph-bold ph-file-pdf"></i> Export PDF</button>' +
                 '<button class="notes-button notes-button-secondary" onclick="app.goBack()">Back to subtopic</button>' +
                 '<button class="notes-button notes-button-primary" ' + (index === pages.length - 1 ? "disabled" : "") + ' onclick="app.navigateNoteReader(1)">Next →</button></div></div>';
         },
