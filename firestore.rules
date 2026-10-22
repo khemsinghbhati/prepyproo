@@ -28,8 +28,11 @@ service cloud.firestore {
       function isShareRecipient() {
         return request.auth != null
           && request.auth.token.email is string
+          // The client stores recipientEmail in lowercase, and the inbox query filters
+          // by this exact field. Keep the resource field unmodified so Firestore can
+          // prove the list query is constrained to the authenticated recipient.
           && resource.data.recipientEmail is string
-          && resource.data.recipientEmail.lower() == request.auth.token.email.lower();
+          && resource.data.recipientEmail == request.auth.token.email.lower();
       }
 
       allow create: if request.auth != null
